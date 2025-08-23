@@ -63,7 +63,7 @@ dbt run
 streamlit run dashboards/app.py
 ```
 
-##Desired Repo Structure:
+## Desired Repo Structure:
 ```
 restaurant-analytics-template/
 │
