@@ -1,0 +1,28 @@
+# Core
+pandas
+requests
+python-dotenv
+
+# Orchestration
+prefect
+
+# Big Data
+pyspark
+
+# Data Warehouse
+snowflake-connector-python
+snowflake-sqlalchemy
+
+# Transformations
+dbt-core
+dbt-snowflake
+
+# Visualization
+streamlit
+
+# Optional (NLP for review sentiment)
+textblob
+scikit-learn
+
+# Testing
+pytest
