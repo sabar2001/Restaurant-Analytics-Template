@@ -1,0 +1,51 @@
+name: 'restaurant_analytics'
+version: '1.0.0'
+config-version: 2
+
+# This setting configures which "profile" dbt uses for this project.
+profile: 'restaurant_analytics'
+
+# These configurations specify where dbt should look for different types of files.
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+# Configuring models
+models:
+  restaurant_analytics:
+    # Config indicated by + and applies to all files under models/example/
+    staging:
+      +materialized: view
+    marts:
+      +materialized: table
+    sources:
+      +materialized: view
+
+# Configuring seeds
+seeds:
+  restaurant_analytics:
+    +column_types:
+      id: varchar
+      name: varchar
+      rating: float
+      data_source: varchar
+
+# Configuring snapshots
+snapshots:
+  restaurant_analytics:
+    +target_schema: snapshots
+    +strategy: timestamp
+    +updated_at: updated_at
+
+# Configuring tests
+tests:
+  restaurant_analytics:
+    +store_failures: true
+    +severity: warn
