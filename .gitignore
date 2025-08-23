@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+
+# Env
+.env
+*.env
+
+# dbt
+dbt_project/target/
+dbt_project/dbt_packages/
+logs/
+
+# Snowflake credentials
+*.p8
