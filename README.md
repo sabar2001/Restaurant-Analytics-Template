@@ -64,6 +64,7 @@ streamlit run dashboards/app.py
 ```
 
 ##Desired Repo Structure:
+```
 restaurant-analytics-template/
 │
 ├── ingestion/                
@@ -101,7 +102,7 @@ restaurant-analytics-template/
 ├── README.md
 └── LICENSE
 
-
+```
 
 
 
