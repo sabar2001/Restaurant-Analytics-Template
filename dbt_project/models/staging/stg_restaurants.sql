@@ -28,12 +28,12 @@ cleaned AS (
         
         -- Extract location information if available
         COALESCE(
-            TRY_CAST(REGEXP_EXTRACT(formatted_address, '([^,]+),\\s*([^,]+),\\s*([A-Z]{2})', 1) AS STRING),
+            SAFE_CAST(REGEXP_EXTRACT(formatted_address, r'([^,]+),\s*([^,]+),\s*([A-Z]{2})', 1) AS STRING),
             'Unknown'
         ) AS city,
         
         COALESCE(
-            TRY_CAST(REGEXP_EXTRACT(formatted_address, '([^,]+),\\s*([^,]+),\\s*([A-Z]{2})', 3) AS STRING),
+            SAFE_CAST(REGEXP_EXTRACT(formatted_address, r'([^,]+),\s*([^,]+),\s*([A-Z]{2})', 3) AS STRING),
             'Unknown'
         ) AS state,
         
@@ -47,8 +47,8 @@ cleaned AS (
         COALESCE(categories, '[]') AS categories,
         
         -- Standardize coordinates
-        TRY_CAST(latitude AS FLOAT) AS latitude,
-        TRY_CAST(longitude AS FLOAT) AS longitude,
+        SAFE_CAST(latitude AS FLOAT64) AS latitude,
+        SAFE_CAST(longitude AS FLOAT64) AS longitude,
         
         -- Timestamps
         ingestion_timestamp,

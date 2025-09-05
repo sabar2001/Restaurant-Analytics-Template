@@ -11,7 +11,7 @@ import logging
 
 from ingestion.yelp_ingest import YelpIngestion
 from ingestion.google_places_ingest import GooglePlacesIngestion
-from ingestion.utils import get_snowflake_config
+from ingestion.utils import get_bigquery_config
 
 logger = logging.getLogger(__name__)
 
@@ -78,45 +78,51 @@ def combine_data_sources(yelp_df: pd.DataFrame, google_df: pd.DataFrame) -> pd.D
         return pd.DataFrame()
 
 @task
-def load_to_snowflake(df: pd.DataFrame, table_name: str = "raw_restaurant_data") -> bool:
-    """Load data to Snowflake data warehouse."""
+def load_to_bigquery(df: pd.DataFrame, table_name: str = "raw_restaurant_data") -> bool:
+    """Load data to BigQuery data warehouse."""
     try:
-        snowflake_config = get_snowflake_config()
-        if not snowflake_config:
-            logger.error("Snowflake configuration not available")
+        bigquery_config = get_bigquery_config()
+        if not bigquery_config:
+            logger.error("BigQuery configuration not available")
             return False
         
         # For now, we'll just log the data that would be loaded
-        # In a real implementation, you would use snowflake-connector-python
-        logger.info(f"Would load {len(df)} records to Snowflake table: {table_name}")
+        # In a real implementation, you would use google-cloud-bigquery
+        logger.info(f"Would load {len(df)} records to BigQuery table: {table_name}")
         logger.info(f"Columns: {list(df.columns)}")
+        logger.info(f"Project: {bigquery_config['project_id']}, Dataset: {bigquery_config['dataset_id']}")
         
-        # TODO: Implement actual Snowflake loading
-        # from snowflake.connector import connect
-        # conn = connect(**snowflake_config)
-        # cursor = conn.cursor()
+        # TODO: Implement actual BigQuery loading
+        # from google.cloud import bigquery
+        # from google.oauth2 import service_account
         # 
-        # # Create table if not exists
-        # create_table_sql = f"""
-        # CREATE TABLE IF NOT EXISTS {table_name} (
-        #     {', '.join([f'{col} VARCHAR' for col in df.columns])}
+        # # Initialize BigQuery client
+        # credentials = service_account.Credentials.from_service_account_file(
+        #     bigquery_config['credentials_path']
         # )
-        # """
-        # cursor.execute(create_table_sql)
+        # client = bigquery.Client(
+        #     credentials=credentials,
+        #     project=bigquery_config['project_id']
+        # )
         # 
-        # # Insert data
-        # for _, row in df.iterrows():
-        #     values = [str(val) if pd.notna(val) else None for val in row.values]
-        #     insert_sql = f"INSERT INTO {table_name} VALUES ({', '.join(['%s'] * len(values))})"
-        #     cursor.execute(insert_sql, values)
+        # # Define table reference
+        # table_id = f"{bigquery_config['project_id']}.{bigquery_config['dataset_id']}.{table_name}"
         # 
-        # conn.commit()
-        # conn.close()
+        # # Configure load job
+        # job_config = bigquery.LoadJobConfig(
+        #     write_disposition="WRITE_TRUNCATE",  # or WRITE_APPEND
+        #     source_format=bigquery.SourceFormat.CSV,
+        #     autodetect=True
+        # )
+        # 
+        # # Load data
+        # job = client.load_table_from_dataframe(df, table_id, job_config=job_config)
+        # job.result()  # Wait for job to complete
         
         return True
         
     except Exception as e:
-        logger.error(f"Error loading to Snowflake: {e}")
+        logger.error(f"Error loading to BigQuery: {e}")
         return False
 
 @task
@@ -167,8 +173,8 @@ def restaurant_data_pipeline(
         # Validate data quality
         quality_metrics = validate_data_quality(combined_data)
         
-        # Load to Snowflake
-        load_success = load_to_snowflake(combined_data)
+        # Load to BigQuery
+        load_success = load_to_bigquery(combined_data)
         
         if load_success:
             logger.info("Pipeline completed successfully")
@@ -178,8 +184,8 @@ def restaurant_data_pipeline(
                 "quality_metrics": quality_metrics
             }
         else:
-            logger.error("Pipeline failed at Snowflake loading step")
-            return {"status": "error", "step": "snowflake_loading"}
+            logger.error("Pipeline failed at BigQuery loading step")
+            return {"status": "error", "step": "bigquery_loading"}
     else:
         logger.error("Pipeline failed - no data to process")
         return {"status": "error", "step": "data_ingestion"}

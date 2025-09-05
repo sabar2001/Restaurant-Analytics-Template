@@ -46,7 +46,7 @@ st.markdown('<h1 class="main-header">🍽️ Restaurant Analytics Dashboard</h1>
 # Sidebar for filters
 st.sidebar.header("📊 Dashboard Filters")
 
-# Mock data for demonstration (in real app, this would come from Snowflake)
+# Mock data for demonstration (in real app, this would come from BigQuery)
 @st.cache_data
 def load_sample_data():
     """Load sample restaurant data for demonstration."""
@@ -267,7 +267,7 @@ st.markdown("---")
 st.markdown(
     """
     <div style='text-align: center; color: #666; padding: 1rem;'>
-        🍽️ Restaurant Analytics Dashboard | Built with Streamlit, dbt, and Snowflake
+        🍽️ Restaurant Analytics Dashboard | Built with Streamlit, dbt, and BigQuery
     </div>
     """,
     unsafe_allow_html=True

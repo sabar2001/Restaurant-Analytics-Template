@@ -10,12 +10,12 @@ prefect
 pyspark
 
 # Data Warehouse
-snowflake-connector-python
-snowflake-sqlalchemy
+google-cloud-bigquery
+google-cloud-storage
 
 # Transformations
 dbt-core
-dbt-snowflake
+dbt-bigquery
 
 # Visualization
 streamlit

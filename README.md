@@ -4,7 +4,7 @@ An open-source **data engineering + analytics engineering** framework for restau
 
 This project demonstrates:
 - **Ingestion & preprocessing** with Spark
-- **Cloud data warehouse** storage in Snowflake
+- **Cloud data warehouse** storage in Google BigQuery
 - **Transformations** with dbt
 - **Pipeline orchestration** with Prefect
 - **Interactive dashboard** with Streamlit
@@ -16,14 +16,14 @@ This project demonstrates:
 ![Architecture Diagram](docs/architecture.png)
 
 **Flow**:  
-APIs (Yelp, Google Places, others) → **Spark ingestion & flattening** → **Snowflake (raw)** → **dbt models** → **Snowflake (analytics schema)** → **Streamlit dashboard**
+APIs (Yelp, Google Places, others) → **Spark ingestion & flattening** → **BigQuery (raw)** → **dbt models** → **BigQuery (analytics schema)** → **Streamlit dashboard**
 
 ---
 
 ## 🛠️ Tech Stack
 
 - **Apache Spark** – scale ingestion & JSON preprocessing  
-- **Snowflake** – cloud warehouse for structured data  
+- **Google BigQuery** – cloud warehouse for structured data  
 - **dbt** – SQL transformations into analytics-ready models  
 - **Prefect** – orchestration of the full pipeline  
 - **Streamlit** – visualization/dashboard  
@@ -55,14 +55,11 @@ Edit `.env` with your actual values:
 YELP_API_KEY=your_actual_yelp_key
 GOOGLE_PLACES_API_KEY=your_actual_google_key
 
-# Snowflake Configuration
-SNOWFLAKE_USER=your_username
-SNOWFLAKE_PASSWORD=your_password
-SNOWFLAKE_ACCOUNT=your_account_url
-SNOWFLAKE_WAREHOUSE=your_warehouse_name
-SNOWFLAKE_DATABASE=restaurant_db
-SNOWFLAKE_SCHEMA=raw
-SNOWFLAKE_ROLE=ACCOUNTADMIN
+# Google BigQuery Configuration
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/your/service-account-key.json
+BIGQUERY_PROJECT_ID=your_project_id
+BIGQUERY_DATASET_ID=restaurant_db
+BIGQUERY_LOCATION=US
 ```
 
 ### 4. Test the setup
@@ -146,13 +143,14 @@ You'll need to obtain API keys for:
    - Visit [Google Cloud Console](https://console.cloud.google.com/)
    - Enable Places API and get your API key
 
-### Snowflake Setup
+### Google BigQuery Setup
 
-1. Create a Snowflake account if you don't have one
-2. Create a new database: `restaurant_db`
-3. Create schemas: `raw`, `analytics`
-4. Create a warehouse for processing
-5. Update your `.env` file with the credentials
+1. Create a Google Cloud Project if you don't have one
+2. Enable the BigQuery API
+3. Create a service account and download the JSON key file
+4. Create a dataset: `restaurant_db`
+5. Grant the service account BigQuery Data Editor and Job User roles
+6. Update your `.env` file with the credentials
 
 ---
 
@@ -237,7 +235,7 @@ python3 -m pytest tests/ --cov=ingestion --cov-report=html
 ### Common Issues
 
 1. **API Key Errors**: Ensure your API keys are correctly set in `.env`
-2. **Snowflake Connection**: Verify your Snowflake credentials and network access
+2. **BigQuery Connection**: Verify your BigQuery credentials and service account permissions
 3. **Missing Dependencies**: Run `pip3 install -r requirements.txt`
 4. **Path Issues**: Ensure you're running commands from the project root
 

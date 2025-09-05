@@ -1,7 +1,8 @@
 
 APIs (Yelp, Google Places, Others)
 Apache Spark (ingestion + preprocessing)
-Snowflake (Raw + Analytics schemas)
+Google BigQuery (data warehouse)
+BigQuery (Raw + Analytics schemas)
 dbt (SQL transformations)
 Streamlit Dashboard (visualizations)
 Prefect (orchestration, overseeing the entire flow)

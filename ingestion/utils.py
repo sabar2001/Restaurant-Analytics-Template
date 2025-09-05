@@ -30,21 +30,19 @@ def get_api_key(service: str) -> Optional[str]:
     
     return api_key
 
-def get_snowflake_config() -> Dict[str, str]:
-    """Get Snowflake connection configuration from environment variables."""
+def get_bigquery_config() -> Dict[str, str]:
+    """Get BigQuery connection configuration from environment variables."""
     config = {
-        'user': os.getenv('SNOWFLAKE_USER'),
-        'password': os.getenv('SNOWFLAKE_PASSWORD'),
-        'account': os.getenv('SNOWFLAKE_ACCOUNT'),
-        'warehouse': os.getenv('SNOWFLAKE_WAREHOUSE'),
-        'database': os.getenv('SNOWFLAKE_DATABASE'),
-        'schema': os.getenv('SNOWFLAKE_SCHEMA')
+        'project_id': os.getenv('BIGQUERY_PROJECT_ID'),
+        'dataset_id': os.getenv('BIGQUERY_DATASET_ID'),
+        'location': os.getenv('BIGQUERY_LOCATION', 'US'),
+        'credentials_path': os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
     }
     
     # Check if all required config is present
-    missing = [k for k, v in config.items() if not v]
+    missing = [k for k, v in config.items() if not v and k != 'location']  # location has default
     if missing:
-        logger.error(f"Missing Snowflake configuration: {missing}")
+        logger.error(f"Missing BigQuery configuration: {missing}")
         return {}
     
     return config

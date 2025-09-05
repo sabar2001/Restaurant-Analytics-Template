@@ -6,7 +6,7 @@ import os
 # Add the parent directory to the path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ingestion.utils import flatten_json, get_api_key, get_snowflake_config
+from ingestion.utils import flatten_json, get_api_key, get_bigquery_config
 
 class TestIngestionUtils(unittest.TestCase):
     """Test cases for ingestion utility functions."""
@@ -67,9 +67,9 @@ class TestIngestionUtils(unittest.TestCase):
         # The function should handle missing keys gracefully
         self.assertIsInstance(key, (str, type(None)))
     
-    def test_get_snowflake_config_missing_env(self):
-        """Test Snowflake config retrieval when environment variables are missing."""
-        config = get_snowflake_config()
+    def test_get_bigquery_config_missing_env(self):
+        """Test BigQuery config retrieval when environment variables are missing."""
+        config = get_bigquery_config()
         # Should return empty dict when config is missing
         self.assertIsInstance(config, dict)
 

@@ -1,11 +1,7 @@
 {{
   config(
     materialized='table',
-    indexes=[
-      {'columns': ['restaurant_id'], 'type': 'btree'},
-      {'columns': ['city', 'state'], 'type': 'btree'},
-      {'columns': ['rating_category'], 'type': 'btree'}
-    ]
+    cluster_by=['city', 'state']
   )
 }}
 
@@ -53,9 +49,9 @@ restaurant_metrics AS (
         
         -- Add data freshness indicator
         CASE 
-            WHEN DATEDIFF('day', ingestion_timestamp, CURRENT_TIMESTAMP()) <= 1 THEN 'Very Fresh'
-            WHEN DATEDIFF('day', ingestion_timestamp, CURRENT_TIMESTAMP()) <= 7 THEN 'Fresh'
-            WHEN DATEDIFF('day', ingestion_timestamp, CURRENT_TIMESTAMP()) <= 30 THEN 'Recent'
+            WHEN DATE_DIFF(CURRENT_DATE(), DATE(ingestion_timestamp), DAY) <= 1 THEN 'Very Fresh'
+            WHEN DATE_DIFF(CURRENT_DATE(), DATE(ingestion_timestamp), DAY) <= 7 THEN 'Fresh'
+            WHEN DATE_DIFF(CURRENT_DATE(), DATE(ingestion_timestamp), DAY) <= 30 THEN 'Recent'
             ELSE 'Stale'
         END AS data_freshness
         
