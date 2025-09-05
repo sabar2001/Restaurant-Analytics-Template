@@ -68,18 +68,41 @@ Run the test suite to ensure everything is working:
 python3 -m pytest tests/ -v
 ```
 
-### 5. Run the pipeline
+### 5. Manage locations (Optional)
 ```bash
-python3 orchestration/flow.py
+# View all configured locations
+python3 scripts/manage_locations.py status
+
+# Add a new location
+python3 scripts/manage_locations.py add "Phoenix, AZ" --priority high
+
+# List all locations
+python3 scripts/manage_locations.py list
+
+# Enable/disable locations
+python3 scripts/manage_locations.py enable "Phoenix, AZ"
+python3 scripts/manage_locations.py disable "Portland, OR"
 ```
 
-### 6. Run dbt transformations
+### 6. Run the pipeline
+```bash
+# Run for all configured locations
+python3 orchestration/flow.py
+
+# Run for specific locations
+python3 orchestration/flow.py --locations "San Francisco, CA" "New York, NY"
+
+# Run for single location
+python3 orchestration/flow.py --locations "Miami, FL"
+```
+
+### 7. Run dbt transformations
 ```bash
 cd dbt_project
 dbt run
 ```
 
-### 7. Launch dashboard
+### 8. Launch dashboard
 ```bash
 streamlit run dashboards/app.py
 ```
@@ -126,6 +149,50 @@ restaurant-analytics-template/
 ├── requirements.txt
 └── README.md
 ```
+
+---
+
+## 🗺️ Location Management
+
+The platform includes a powerful location management system that makes it easy to add new cities and regions for restaurant data collection.
+
+### **Easy Location Addition**
+```bash
+# Add a new location with just one command
+python3 scripts/manage_locations.py add "Phoenix, AZ" --priority high
+
+# Add multiple locations
+python3 scripts/manage_locations.py add "Las Vegas, NV" --priority medium
+python3 scripts/manage_locations.py add "Nashville, TN" --priority low
+```
+
+### **Location Management Commands**
+```bash
+# View all locations and their status
+python3 scripts/manage_locations.py status
+
+# List locations by priority
+python3 scripts/manage_locations.py list --priority high
+python3 scripts/manage_locations.py list --priority medium
+
+# Enable/disable locations
+python3 scripts/manage_locations.py enable "Phoenix, AZ"
+python3 scripts/manage_locations.py disable "Portland, OR"
+
+# Remove a location
+python3 scripts/manage_locations.py remove "Portland, OR"
+```
+
+### **Location Configuration**
+Locations are stored in `config/locations.yml` and can be managed through:
+- **CLI commands** (recommended)
+- **Direct YAML editing**
+- **Dashboard interface** (shows configured locations)
+
+### **Priority Levels**
+- **High**: Major cities, tech hubs, food capitals
+- **Medium**: Regional centers, growing cities
+- **Low**: Smaller cities, experimental locations
 
 ---
 

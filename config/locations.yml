@@ -1,0 +1,68 @@
+locations:
+- name: San Francisco, CA
+  country: US
+  priority: high
+  enabled: true
+- name: New York, NY
+  country: US
+  priority: high
+  enabled: true
+- name: Los Angeles, CA
+  country: US
+  priority: high
+  enabled: true
+- name: Chicago, IL
+  country: US
+  priority: high
+  enabled: true
+- name: Miami, FL
+  country: US
+  priority: medium
+  enabled: true
+- name: Seattle, WA
+  country: US
+  priority: medium
+  enabled: true
+- name: Austin, TX
+  country: US
+  priority: medium
+  enabled: true
+- name: Denver, CO
+  country: US
+  priority: medium
+  enabled: true
+- name: Boston, MA
+  country: US
+  priority: medium
+  enabled: true
+- name: Portland, OR
+  country: US
+  priority: low
+  enabled: true
+- name: Phoenix, AZ
+  country: US
+  priority: high
+  enabled: true
+settings:
+  default_yelp_limit: 50
+  default_google_radius: 5000
+  batch_size: 5
+  retry_attempts: 3
+  cache_duration_hours: 24
+categories:
+  major_cities:
+  - San Francisco, CA
+  - New York, NY
+  - Los Angeles, CA
+  - Chicago, IL
+  tech_hubs:
+  - San Francisco, CA
+  - Seattle, WA
+  - Austin, TX
+  - Denver, CO
+  food_capitals:
+  - New York, NY
+  - Los Angeles, CA
+  - San Francisco, CA
+  - Chicago, IL
+  - Miami, FL
