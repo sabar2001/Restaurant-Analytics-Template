@@ -1,8 +1,197 @@
+# Restaurant Analytics Architecture
 
-APIs (Yelp, Google Places, Others)
-Apache Spark (ingestion + preprocessing)
-Google BigQuery (data warehouse)
-BigQuery (Raw + Analytics schemas)
-dbt (SQL transformations)
-Streamlit Dashboard (visualizations)
-Prefect (orchestration, overseeing the entire flow)
+## High-Level Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                                DATA SOURCES                                     │
+├─────────────────┬─────────────────┬─────────────────┬─────────────────────────┤
+│   Yelp API      │ Google Places   │   Kafka Stream  │    Future Sources        │
+│                 │     API         │   (Real-time)   │    (OpenTable, etc.)    │
+└─────────────────┴─────────────────┴─────────────────┴─────────────────────────┘
+         │                   │                   │                   │
+         ▼                   ▼                   ▼                   ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              INGESTION LAYER                                   │
+├─────────────────┬─────────────────┬─────────────────┬─────────────────────────┤
+│   Python        │   Data          │   Location      │    Streaming            │
+│   Requests      │   Cleaning      │   Management    │    Processing           │
+│   & Parsing     │   & Validation  │   System        │    (Spark)              │
+└─────────────────┴─────────────────┴─────────────────┴─────────────────────────┘
+         │                   │                   │                   │
+         ▼                   ▼                   ▼                   ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                            PROCESSING ENGINE                                   │
+├─────────────────┬─────────────────┬─────────────────┬─────────────────────────┤
+│   Pandas        │   Apache Spark  │   Hybrid         │    Real-time             │
+│   (Small Data)  │   (Large Data)  │   Processing    │    Streaming            │
+│   Fallback      │   Distributed   │   Auto-fallback │    (Spark Streaming)    │
+└─────────────────┴─────────────────┴─────────────────┴─────────────────────────┘
+         │                   │                   │                   │
+         ▼                   ▼                   ▼                   ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                           ORCHESTRATION LAYER                                  │
+├─────────────────┬─────────────────┬─────────────────┬─────────────────────────┤
+│   Prefect       │   Workflow      │   Scheduling    │    Monitoring            │
+│   Flows         │   Management    │   & Triggers    │    & Logging             │
+└─────────────────┴─────────────────┴─────────────────┴─────────────────────────┘
+         │                   │                   │                   │
+         ▼                   ▼                   ▼                   ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                            DATA WAREHOUSE                                      │
+├─────────────────┬─────────────────┬─────────────────┬─────────────────────────┤
+│   BigQuery      │   Raw Tables    │   Analytics     │    Streaming            │
+│   (Cloud)       │   (Staging)     │   Schema        │    Tables               │
+└─────────────────┴─────────────────┴─────────────────┴─────────────────────────┘
+         │                   │                   │                   │
+         ▼                   ▼                   ▼                   ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                            TRANSFORMATION LAYER                               │
+├─────────────────┬─────────────────┬─────────────────┬─────────────────────────┤
+│   dbt Models    │   SQL           │   Data          │    ML Features           │
+│   (Staging)     │   Transformations│   Quality       │    Engineering           │
+│                 │   (Marts)       │   Checks        │    (Future)              │
+└─────────────────┴─────────────────┴─────────────────┴─────────────────────────┘
+         │                   │                   │                   │
+         ▼                   ▼                   ▼                   ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                            VISUALIZATION LAYER                                │
+├─────────────────┬─────────────────┬─────────────────┬─────────────────────────┤
+│   Streamlit     │   Interactive   │   Real-time     │    Reports               │
+│   Dashboard     │   Analytics      │   Dashboards    │    & Exports             │
+└─────────────────┴─────────────────┴─────────────────┴─────────────────────────┘
+         │                   │                   │                   │
+         ▼                   ▼                   ▼                   ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                            DEPLOYMENT & MONITORING                             │
+├─────────────────┬─────────────────┬─────────────────┬─────────────────────────┤
+│   Docker        │   Cloud Run     │   Prefect UI    │    Spark UI              │
+│   Containers    │   / Kubernetes  │   Monitoring    │    Monitoring           │
+└─────────────────┴─────────────────┴─────────────────┴─────────────────────────┘
+```
+
+## Processing Modes
+
+### 1. Batch Processing (Traditional ETL)
+```
+Data Sources → Pandas/Spark → BigQuery → dbt → Dashboard
+```
+
+### 2. Streaming Processing (Real-time)
+```
+Kafka → Spark Streaming → BigQuery → Real-time Dashboard
+```
+
+### 3. Hybrid Processing (Auto-fallback)
+```
+Data Sources → Spark (if available) → Pandas (fallback) → BigQuery
+```
+
+## Key Components
+
+### **Ingestion Layer**
+- **Yelp API**: Restaurant data, reviews, ratings
+- **Google Places**: Location data, business hours, photos
+- **Kafka Stream**: Real-time data ingestion
+- **Location Management**: Multi-city data collection
+
+### **Processing Engine**
+- **Pandas**: Small to medium datasets, development
+- **Apache Spark**: Large datasets, distributed processing
+- **Hybrid Mode**: Automatic fallback based on data size
+- **Streaming**: Real-time data processing
+
+### **Data Warehouse**
+- **BigQuery**: Cloud data warehouse
+- **Raw Tables**: Unprocessed data storage
+- **Analytics Schema**: Processed, structured data
+- **Streaming Tables**: Real-time data ingestion
+
+### **Transformation Layer**
+- **dbt**: SQL-based transformations
+- **Staging Models**: Data cleaning and standardization
+- **Mart Models**: Business-ready analytics tables
+- **Data Quality**: Validation and monitoring
+
+### **Visualization**
+- **Streamlit**: Interactive web dashboard
+- **Real-time Updates**: Live data visualization
+- **Location Filtering**: Multi-city analytics
+- **Export Capabilities**: Data download and reporting
+
+## Scalability Features
+
+### **Horizontal Scaling**
+- Spark cluster support (YARN, Kubernetes)
+- Multi-node processing
+- Distributed data storage
+
+### **Vertical Scaling**
+- Configurable memory allocation
+- CPU core optimization
+- Auto-scaling based on workload
+
+### **Data Volume Handling**
+- Small datasets: Pandas (fast, simple)
+- Medium datasets: Spark local mode
+- Large datasets: Spark cluster mode
+- Streaming: Spark Streaming with Kafka
+
+## Technology Stack
+
+### **Core Technologies**
+- **Python**: Primary development language
+- **Apache Spark**: Distributed processing engine
+- **Pandas**: Data manipulation library
+- **Google BigQuery**: Cloud data warehouse
+- **dbt**: Data transformation tool
+- **Prefect**: Workflow orchestration
+- **Streamlit**: Web application framework
+
+### **Streaming Technologies**
+- **Apache Kafka**: Message streaming platform
+- **Spark Streaming**: Real-time data processing
+- **Kafka Connect**: Data source integration
+
+### **Deployment Technologies**
+- **Docker**: Containerization
+- **Google Cloud Run**: Serverless deployment
+- **Kubernetes**: Container orchestration
+- **CI/CD**: Continuous integration/deployment
+
+## Performance Characteristics
+
+### **Processing Speed**
+- **Pandas**: Fast for small data (<1K records)
+- **Spark Local**: Good for medium data (1K-10K records)
+- **Spark Cluster**: Excellent for large data (>10K records)
+- **Streaming**: Real-time processing (sub-second latency)
+
+### **Memory Usage**
+- **Pandas**: High memory usage for large datasets
+- **Spark**: Distributed memory across cluster nodes
+- **Streaming**: Continuous memory management
+
+### **Scalability**
+- **Pandas**: Single machine limitation
+- **Spark**: Horizontal scaling across multiple nodes
+- **Streaming**: Infinite horizontal scaling potential
+
+## Configuration Management
+
+### **Environment Configuration**
+- `.env` files for API keys and credentials
+- `config/locations.yml` for location and processing settings
+- `dbt_profiles.yml` for data warehouse connections
+
+### **Spark Configuration**
+- Master node configuration
+- Executor memory and cores
+- Streaming batch intervals
+- Kafka connection settings
+
+### **Location Management**
+- Priority-based processing
+- Enable/disable locations
+- Batch processing configuration
+- Geographic data settings
