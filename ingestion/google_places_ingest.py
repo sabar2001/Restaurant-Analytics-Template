@@ -1,7 +1,7 @@
 import requests
 import pandas as pd
 from typing import List, Dict, Any
-from utils import get_api_key, validate_response, flatten_json
+from .utils import get_api_key, validate_response, flatten_json
 import logging
 
 logger = logging.getLogger(__name__)

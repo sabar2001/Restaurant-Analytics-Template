@@ -11,6 +11,8 @@ import sys
 # Add the parent directory to the path to import our modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from ingestion.location_manager import get_enabled_locations
+
 # Page configuration
 st.set_page_config(
     page_title="Restaurant Analytics Dashboard",
@@ -45,6 +47,24 @@ st.markdown('<h1 class="main-header">🍽️ Restaurant Analytics Dashboard</h1>
 
 # Sidebar for filters
 st.sidebar.header("📊 Dashboard Filters")
+
+# Location Management Section
+st.sidebar.subheader("🗺️ Location Management")
+if st.sidebar.button("View All Locations"):
+    try:
+        locations = get_enabled_locations()
+        if locations:
+            st.sidebar.success(f"✅ {len(locations)} locations configured")
+            for loc in locations[:5]:  # Show first 5
+                st.sidebar.text(f"• {loc}")
+            if len(locations) > 5:
+                st.sidebar.text(f"... and {len(locations) - 5} more")
+        else:
+            st.sidebar.warning("No locations configured")
+    except Exception as e:
+        st.sidebar.error(f"Error: {e}")
+
+st.sidebar.markdown("---")
 
 # Mock data for demonstration (in real app, this would come from BigQuery)
 @st.cache_data
@@ -81,11 +101,38 @@ df = load_sample_data()
 
 # Filters
 st.sidebar.subheader("📍 Location Filter")
-selected_cities = st.sidebar.multiselect(
-    "Select Cities",
-    options=df['city'].unique(),
-    default=df['city'].unique()[:3]
-)
+
+# Get available locations from configuration
+try:
+    available_locations = get_enabled_locations()
+    if available_locations:
+        selected_locations = st.sidebar.multiselect(
+            "Select Locations",
+            options=available_locations,
+            default=available_locations[:3],
+            help="Choose which locations to include in the analysis"
+        )
+    else:
+        selected_locations = []
+        st.sidebar.warning("No locations configured. Please add locations using the location manager.")
+except Exception as e:
+    st.sidebar.error(f"Error loading locations: {e}")
+    selected_locations = []
+
+# Fallback to city-based filtering if no locations configured
+if not selected_locations:
+    selected_cities = st.sidebar.multiselect(
+        "Select Cities (Fallback)",
+        options=df['city'].unique(),
+        default=df['city'].unique()[:3]
+    )
+else:
+    # For demo purposes, we'll still use city filtering since our mock data uses cities
+    selected_cities = st.sidebar.multiselect(
+        "Select Cities",
+        options=df['city'].unique(),
+        default=df['city'].unique()[:3]
+    )
 
 st.sidebar.subheader("⭐ Rating Filter")
 min_rating = st.sidebar.slider("Minimum Rating", 1.0, 5.0, 3.0, 0.1)

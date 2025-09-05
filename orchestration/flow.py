@@ -12,6 +12,7 @@ import logging
 from ingestion.yelp_ingest import YelpIngestion
 from ingestion.google_places_ingest import GooglePlacesIngestion
 from ingestion.utils import get_bigquery_config
+from ingestion.location_manager import LocationManager, get_enabled_locations
 
 logger = logging.getLogger(__name__)
 
@@ -54,23 +55,33 @@ def ingest_google_places_data(location: str = "San Francisco, CA", radius: int =
         return pd.DataFrame()
 
 @task
-def combine_data_sources(yelp_df: pd.DataFrame, google_df: pd.DataFrame) -> pd.DataFrame:
-    """Combine data from multiple sources."""
+def combine_data_sources(yelp_dataframes: List[pd.DataFrame], google_dataframes: List[pd.DataFrame]) -> pd.DataFrame:
+    """Combine data from multiple sources and locations."""
     try:
-        if yelp_df.empty and google_df.empty:
+        all_dataframes = []
+        
+        # Process Yelp dataframes
+        for i, yelp_df in enumerate(yelp_dataframes):
+            if not yelp_df.empty:
+                yelp_df['source'] = 'yelp'
+                yelp_df['location_index'] = i
+                all_dataframes.append(yelp_df)
+        
+        # Process Google dataframes
+        for i, google_df in enumerate(google_dataframes):
+            if not google_df.empty:
+                google_df['source'] = 'google_places'
+                google_df['location_index'] = i
+                all_dataframes.append(google_df)
+        
+        if not all_dataframes:
             logger.warning("No data from any source")
             return pd.DataFrame()
         
-        # Add source identifier if not already present
-        if not yelp_df.empty:
-            yelp_df['source'] = 'yelp'
-        if not google_df.empty:
-            google_df['source'] = 'google_places'
+        # Combine all dataframes
+        combined_df = pd.concat(all_dataframes, ignore_index=True)
         
-        # Combine the dataframes
-        combined_df = pd.concat([yelp_df, google_df], ignore_index=True)
-        
-        logger.info(f"Combined {len(combined_df)} total records")
+        logger.info(f"Combined {len(combined_df)} total records from {len(all_dataframes)} data sources")
         return combined_df
         
     except Exception as e:
@@ -154,20 +165,66 @@ def validate_data_quality(df: pd.DataFrame) -> Dict[str, Any]:
 
 @flow(name="restaurant-data-pipeline")
 def restaurant_data_pipeline(
-    location: str = "San Francisco, CA",
+    locations: List[str] = None,
     yelp_limit: int = 50,
-    google_radius: int = 5000
+    google_radius: int = 5000,
+    use_all_locations: bool = True
 ):
     """Main orchestration flow for restaurant data pipeline."""
     
-    logger.info(f"Starting restaurant data pipeline for location: {location}")
+    # Get locations to process
+    if locations is None:
+        if use_all_locations:
+            locations = get_enabled_locations()
+            logger.info(f"Using all enabled locations: {locations}")
+        else:
+            locations = ["San Francisco, CA"]  # Default fallback
+            logger.info(f"Using default location: {locations}")
+    else:
+        logger.info(f"Using specified locations: {locations}")
     
-    # Ingest data from multiple sources
-    yelp_data = ingest_yelp_data(location, yelp_limit)
-    google_data = ingest_google_places_data(location, google_radius)
+    if not locations:
+        logger.error("No locations specified for data ingestion")
+        return {"status": "error", "step": "location_configuration"}
     
-    # Combine data sources
-    combined_data = combine_data_sources(yelp_data, google_data)
+    logger.info(f"Starting restaurant data pipeline for {len(locations)} locations")
+    
+    # Process each location
+    all_yelp_data = []
+    all_google_data = []
+    location_results = {}
+    
+    for location in locations:
+        logger.info(f"Processing location: {location}")
+        
+        try:
+            # Ingest data from multiple sources for this location
+            yelp_data = ingest_yelp_data(location, yelp_limit)
+            google_data = ingest_google_places_data(location, google_radius)
+            
+            # Store results
+            all_yelp_data.append(yelp_data)
+            all_google_data.append(google_data)
+            
+            location_results[location] = {
+                "yelp_records": len(yelp_data),
+                "google_records": len(google_data),
+                "status": "success"
+            }
+            
+            logger.info(f"Location {location}: Yelp={len(yelp_data)}, Google={len(google_data)}")
+            
+        except Exception as e:
+            logger.error(f"Error processing location {location}: {e}")
+            location_results[location] = {
+                "yelp_records": 0,
+                "google_records": 0,
+                "status": "error",
+                "error": str(e)
+            }
+    
+    # Combine all data sources
+    combined_data = combine_data_sources(all_yelp_data, all_google_data)
     
     if not combined_data.empty:
         # Validate data quality
@@ -181,6 +238,8 @@ def restaurant_data_pipeline(
             return {
                 "status": "success",
                 "records_processed": len(combined_data),
+                "locations_processed": len(locations),
+                "location_results": location_results,
                 "quality_metrics": quality_metrics
             }
         else:
