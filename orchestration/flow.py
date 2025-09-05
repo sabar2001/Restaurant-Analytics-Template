@@ -13,6 +13,8 @@ from ingestion.yelp_ingest import YelpIngestion
 from ingestion.google_places_ingest import GooglePlacesIngestion
 from ingestion.utils import get_bigquery_config
 from ingestion.location_manager import LocationManager, get_enabled_locations
+from ingestion.spark_processor import SparkRestaurantProcessor
+from ingestion.spark_streaming import SparkStreamingProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -55,82 +57,53 @@ def ingest_google_places_data(location: str = "San Francisco, CA", radius: int =
         return pd.DataFrame()
 
 @task
-def combine_data_sources(yelp_dataframes: List[pd.DataFrame], google_dataframes: List[pd.DataFrame]) -> pd.DataFrame:
-    """Combine data from multiple sources and locations."""
+def combine_data_sources_with_spark(yelp_dataframes: List[pd.DataFrame], google_dataframes: List[pd.DataFrame], config: Dict[str, Any] = None) -> Any:
+    """Combine data from multiple sources using Spark or pandas."""
     try:
-        all_dataframes = []
+        # Initialize Spark processor
+        spark_processor = SparkRestaurantProcessor(config)
         
-        # Process Yelp dataframes
-        for i, yelp_df in enumerate(yelp_dataframes):
+        # Process each DataFrame
+        processed_dataframes = []
+        
+        for yelp_df in yelp_dataframes:
             if not yelp_df.empty:
-                yelp_df['source'] = 'yelp'
-                yelp_df['location_index'] = i
-                all_dataframes.append(yelp_df)
+                processed_df = spark_processor.process_restaurant_data(yelp_df)
+                processed_dataframes.append(processed_df)
         
-        # Process Google dataframes
-        for i, google_df in enumerate(google_dataframes):
+        for google_df in google_dataframes:
             if not google_df.empty:
-                google_df['source'] = 'google_places'
-                google_df['location_index'] = i
-                all_dataframes.append(google_df)
+                processed_df = spark_processor.process_restaurant_data(google_df)
+                processed_dataframes.append(processed_df)
         
-        if not all_dataframes:
+        if not processed_dataframes:
             logger.warning("No data from any source")
-            return pd.DataFrame()
+            return spark_processor._process_with_pandas([])
         
-        # Combine all dataframes
-        combined_df = pd.concat(all_dataframes, ignore_index=True)
+        # Combine all processed DataFrames
+        combined_data = spark_processor.combine_data_sources(processed_dataframes)
         
-        logger.info(f"Combined {len(combined_df)} total records from {len(all_dataframes)} data sources")
-        return combined_df
+        logger.info(f"Combined data using {'Spark' if spark_processor.use_spark else 'pandas'}")
+        return combined_data
         
     except Exception as e:
         logger.error(f"Error combining data sources: {e}")
         return pd.DataFrame()
 
 @task
-def load_to_bigquery(df: pd.DataFrame, table_name: str = "raw_restaurant_data") -> bool:
-    """Load data to BigQuery data warehouse."""
+def load_to_bigquery_with_spark(data: Any, table_name: str = "raw_restaurant_data", config: Dict[str, Any] = None) -> bool:
+    """Load data to BigQuery using Spark or pandas."""
     try:
-        bigquery_config = get_bigquery_config()
-        if not bigquery_config:
-            logger.error("BigQuery configuration not available")
-            return False
+        # Initialize Spark processor
+        spark_processor = SparkRestaurantProcessor(config)
         
-        # For now, we'll just log the data that would be loaded
-        # In a real implementation, you would use google-cloud-bigquery
-        logger.info(f"Would load {len(df)} records to BigQuery table: {table_name}")
-        logger.info(f"Columns: {list(df.columns)}")
-        logger.info(f"Project: {bigquery_config['project_id']}, Dataset: {bigquery_config['dataset_id']}")
+        # Write to BigQuery
+        success = spark_processor.write_to_bigquery(data, table_name)
         
-        # TODO: Implement actual BigQuery loading
-        # from google.cloud import bigquery
-        # from google.oauth2 import service_account
-        # 
-        # # Initialize BigQuery client
-        # credentials = service_account.Credentials.from_service_account_file(
-        #     bigquery_config['credentials_path']
-        # )
-        # client = bigquery.Client(
-        #     credentials=credentials,
-        #     project=bigquery_config['project_id']
-        # )
-        # 
-        # # Define table reference
-        # table_id = f"{bigquery_config['project_id']}.{bigquery_config['dataset_id']}.{table_name}"
-        # 
-        # # Configure load job
-        # job_config = bigquery.LoadJobConfig(
-        #     write_disposition="WRITE_TRUNCATE",  # or WRITE_APPEND
-        #     source_format=bigquery.SourceFormat.CSV,
-        #     autodetect=True
-        # )
-        # 
-        # # Load data
-        # job = client.load_table_from_dataframe(df, table_id, job_config=job_config)
-        # job.result()  # Wait for job to complete
+        if success:
+            logger.info(f"Successfully loaded data to BigQuery using {'Spark' if spark_processor.use_spark else 'pandas'}")
         
-        return True
+        return success
         
     except Exception as e:
         logger.error(f"Error loading to BigQuery: {e}")
@@ -168,9 +141,20 @@ def restaurant_data_pipeline(
     locations: List[str] = None,
     yelp_limit: int = 50,
     google_radius: int = 5000,
-    use_all_locations: bool = True
+    use_all_locations: bool = True,
+    use_spark: bool = None
 ):
     """Main orchestration flow for restaurant data pipeline."""
+    
+    # Load configuration
+    location_manager = LocationManager()
+    config = location_manager.get_settings()
+    
+    # Override Spark setting if specified
+    if use_spark is not None:
+        config['use_spark'] = use_spark
+    
+    logger.info(f"Using Spark: {config.get('use_spark', False)}")
     
     # Get locations to process
     if locations is None:
@@ -223,24 +207,34 @@ def restaurant_data_pipeline(
                 "error": str(e)
             }
     
-    # Combine all data sources
-    combined_data = combine_data_sources(all_yelp_data, all_google_data)
+    # Combine data sources using Spark or pandas
+    combined_data = combine_data_sources_with_spark(all_yelp_data, all_google_data, config)
     
-    if not combined_data.empty:
+    if combined_data is not None and (hasattr(combined_data, 'count') and combined_data.count() > 0) or (hasattr(combined_data, '__len__') and len(combined_data) > 0):
         # Validate data quality
-        quality_metrics = validate_data_quality(combined_data)
+        if config.get('use_spark', False):
+            # For Spark DataFrames, convert to pandas for validation
+            try:
+                validation_df = combined_data.toPandas()
+            except:
+                validation_df = pd.DataFrame()
+        else:
+            validation_df = combined_data
         
-        # Load to BigQuery
-        load_success = load_to_bigquery(combined_data)
+        quality_metrics = validate_data_quality(validation_df)
+        
+        # Load to BigQuery using Spark or pandas
+        load_success = load_to_bigquery_with_spark(combined_data, "raw_restaurant_data", config)
         
         if load_success:
             logger.info("Pipeline completed successfully")
             return {
                 "status": "success",
-                "records_processed": len(combined_data),
+                "records_processed": len(validation_df) if not validation_df.empty else 0,
                 "locations_processed": len(locations),
                 "location_results": location_results,
-                "quality_metrics": quality_metrics
+                "quality_metrics": quality_metrics,
+                "processing_engine": "Spark" if config.get('use_spark', False) else "Pandas"
             }
         else:
             logger.error("Pipeline failed at BigQuery loading step")
@@ -248,6 +242,48 @@ def restaurant_data_pipeline(
     else:
         logger.error("Pipeline failed - no data to process")
         return {"status": "error", "step": "data_ingestion"}
+
+@flow(name="streaming-restaurant-pipeline")
+def streaming_restaurant_pipeline(
+    table_name: str = "raw_restaurant_data",
+    use_spark_streaming: bool = None
+):
+    """Real-time streaming pipeline for restaurant data."""
+    
+    # Load configuration
+    location_manager = LocationManager()
+    config = location_manager.get_settings()
+    
+    # Override streaming setting if specified
+    if use_spark_streaming is not None:
+        config['spark_streaming_enabled'] = use_spark_streaming
+    
+    if not config.get('spark_streaming_enabled', False):
+        logger.warning("Spark streaming not enabled in configuration")
+        return {"status": "error", "message": "Streaming not enabled"}
+    
+    try:
+        # Initialize streaming processor
+        streaming_processor = SparkStreamingProcessor(config)
+        
+        # Start streaming pipeline
+        query = streaming_processor.start_streaming_pipeline(table_name)
+        
+        if query:
+            logger.info("Streaming pipeline started successfully")
+            return {
+                "status": "success",
+                "message": "Streaming pipeline started",
+                "table_name": table_name,
+                "query_id": query.id if hasattr(query, 'id') else "unknown"
+            }
+        else:
+            logger.error("Failed to start streaming pipeline")
+            return {"status": "error", "message": "Failed to start streaming"}
+            
+    except Exception as e:
+        logger.error(f"Error in streaming pipeline: {e}")
+        return {"status": "error", "message": str(e)}
 
 if __name__ == "__main__":
     # Run the pipeline

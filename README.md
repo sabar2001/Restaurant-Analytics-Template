@@ -16,17 +16,24 @@ This project demonstrates:
 ![Architecture Diagram](docs/architecture.png)
 
 **Flow**:  
-APIs (Yelp, Google Places, others) → **Spark ingestion & flattening** → **BigQuery (raw)** → **dbt models** → **BigQuery (analytics schema)** → **Streamlit dashboard**
+APIs (Yelp, Google Places, Kafka Stream) → **Spark/Pandas ingestion & processing** → **BigQuery (raw)** → **dbt models** → **BigQuery (analytics schema)** → **Streamlit dashboard**
+
+### **Processing Modes**
+- **Batch Processing**: Traditional ETL with pandas or Spark
+- **Streaming Processing**: Real-time data ingestion with Spark Streaming
+- **Hybrid Processing**: Automatic fallback from Spark to pandas
 
 ---
 
 ## 🛠️ Tech Stack
 
-- **Apache Spark** – scale ingestion & JSON preprocessing  
+- **Apache Spark** – distributed processing & real-time streaming  
+- **Pandas** – fallback processing for smaller datasets  
 - **Google BigQuery** – cloud warehouse for structured data  
 - **dbt** – SQL transformations into analytics-ready models  
 - **Prefect** – orchestration of the full pipeline  
 - **Streamlit** – visualization/dashboard  
+- **Kafka** – streaming data source (optional)  
 
 ---
 
@@ -47,6 +54,15 @@ pip3 install -r requirements.txt
 Copy `config/sample.env` → `.env` and add your credentials:
 ```bash
 cp config/sample.env .env
+```
+
+### 4. Configure Spark (Optional)
+Edit `config/locations.yml` to enable Spark processing:
+```yaml
+settings:
+  use_spark: true  # Enable Spark for large-scale processing
+  spark_streaming_enabled: false  # Enable real-time streaming
+  spark_master: "local[*]"  # Spark cluster configuration
 ```
 
 Edit `.env` with your actual values:
@@ -86,14 +102,23 @@ python3 scripts/manage_locations.py disable "Portland, OR"
 
 ### 6. Run the pipeline
 ```bash
-# Run for all configured locations
+# Run with pandas (default)
 python3 orchestration/flow.py
+
+# Run with Spark processing
+python3 orchestration/flow.py --use-spark true
+
+# Run streaming pipeline (requires Kafka)
+python3 orchestration/flow.py --streaming true
 
 # Run for specific locations
 python3 orchestration/flow.py --locations "San Francisco, CA" "New York, NY"
 
 # Run for single location
 python3 orchestration/flow.py --locations "Miami, FL"
+
+# Run with custom limits
+python3 orchestration/flow.py --yelp-limit 100 --google-radius 10000
 ```
 
 ### 7. Run dbt transformations
@@ -152,6 +177,71 @@ restaurant-analytics-template/
 
 ---
 
+## ⚡ Spark Processing
+
+The platform supports both **Apache Spark** and **pandas** processing, with automatic fallback capabilities.
+
+### **When to Use Spark**
+- **Large datasets**: 10,000+ restaurants per day
+- **Multiple locations**: Processing 10+ cities simultaneously  
+- **Real-time streaming**: Live data ingestion from Kafka
+- **Complex transformations**: Heavy data processing requirements
+- **Distributed processing**: Multi-node cluster environments
+
+### **When to Use Pandas**
+- **Small datasets**: <5,000 restaurants per day
+- **Single location**: Processing one city at a time
+- **Batch processing**: Traditional ETL workflows
+- **Simple transformations**: Basic data cleaning
+- **Development/testing**: Quick iteration and debugging
+
+### **Spark Configuration**
+```yaml
+# config/locations.yml
+settings:
+  use_spark: true  # Enable Spark processing
+  spark_master: "local[*]"  # or "yarn" for cluster
+  spark_app_name: "RestaurantAnalytics"
+  spark_memory: "2g"  # Executor memory
+  spark_cores: 4  # Number of cores
+  
+  # Streaming configuration
+  spark_streaming_enabled: false
+  kafka_bootstrap_servers: "localhost:9092"
+  kafka_topic: "restaurant_data"
+  streaming_batch_interval: 30  # seconds
+```
+
+### **Processing Examples**
+```python
+# Batch processing with Spark
+from ingestion.spark_processor import SparkRestaurantProcessor
+
+processor = SparkRestaurantProcessor({'use_spark': True})
+processed_data = processor.process_restaurant_data(restaurant_data)
+processor.write_to_bigquery(processed_data, "raw_restaurant_data")
+
+# Streaming processing
+from ingestion.spark_streaming import SparkStreamingProcessor
+
+streaming = SparkStreamingProcessor({'spark_streaming_enabled': True})
+query = streaming.start_streaming_pipeline("raw_restaurant_data")
+```
+
+### **Performance Comparison**
+| Metric | Pandas | Spark |
+|--------|--------|-------|
+| **Small Data** (<1K records) | ⚡ Fast | 🐌 Slower |
+| **Medium Data** (1K-10K records) | ✅ Good | ✅ Good |
+| **Large Data** (>10K records) | ❌ Memory issues | ⚡ Excellent |
+| **Real-time** | ❌ Not supported | ✅ Native streaming |
+| **Distributed** | ❌ Single machine | ✅ Multi-node |
+
+### **Advanced Examples**
+For detailed Spark examples and use cases, see [Spark Examples Documentation](docs/spark_examples.md).
+
+---
+
 ## 🗺️ Location Management
 
 The platform includes a powerful location management system that makes it easy to add new cities and regions for restaurant data collection.
@@ -194,9 +284,93 @@ Locations are stored in `config/locations.yml` and can be managed through:
 - **Medium**: Regional centers, growing cities
 - **Low**: Smaller cities, experimental locations
 
----
+### **How Priority Works**
 
-## 🔧 Configuration
+The priority system controls how locations are processed and resources are allocated:
+
+#### **Processing Order**
+Locations are processed in priority order: High → Medium → Low
+```bash
+# Process only high priority locations first
+python3 scripts/manage_locations.py list --priority high
+
+# Process medium priority locations
+python3 scripts/manage_locations.py list --priority medium
+```
+
+#### **Resource Allocation**
+Priority affects API limits and processing parameters:
+- **High Priority**: Full API limits (50 restaurants, 5km radius)
+- **Medium Priority**: Reduced limits (30 restaurants, 3km radius)  
+- **Low Priority**: Minimal limits (20 restaurants, 2km radius)
+
+#### **Batch Processing**
+The pipeline processes locations in batches by priority:
+1. **First**: All high priority locations
+2. **Then**: All medium priority locations
+3. **Finally**: All low priority locations
+
+#### **Priority Best Practices**
+
+**High Priority Locations:**
+- Major metropolitan areas (NYC, LA, SF, Chicago)
+- Tech hubs (San Francisco, Seattle, Austin)
+- Food capitals (New York, Los Angeles, San Francisco)
+- High restaurant density areas
+
+**Medium Priority Locations:**
+- Regional centers (Miami, Denver, Boston)
+- Growing cities (Austin, Seattle)
+- Secondary markets
+- Good restaurant scenes
+
+**Low Priority Locations:**
+- Smaller cities (Portland, Nashville)
+- Experimental locations
+- Testing new markets
+- Limited restaurant data
+
+#### **Dynamic Priority Management**
+```bash
+# Promote a location to high priority
+python3 scripts/manage_locations.py add "Las Vegas, NV" --priority high
+
+# Change priority of existing location
+python3 scripts/manage_locations.py disable "Portland, OR"  # Then re-add with new priority
+
+# Focus on specific priority levels
+python3 orchestration/flow.py --locations $(python3 scripts/manage_locations.py list --priority high)
+```
+
+#### **Priority Impact on Pipeline**
+Priority affects:
+- **Processing order** (high → medium → low)
+- **Resource allocation** (API limits, search radius)
+- **Error handling** (retry attempts per priority)
+- **Monitoring** (which locations to watch closely)
+- **Cost control** (disable low priority to save API costs)
+
+### Priority Quick Reference
+
+| Priority | Use Case | API Limits | Processing Order |
+|----------|----------|------------|------------------|
+| **High** | Major cities, tech hubs | 50 restaurants, 5km radius | First |
+| **Medium** | Regional centers | 30 restaurants, 3km radius | Second |
+| **Low** | Smaller cities, testing | 20 restaurants, 2km radius | Last |
+
+**Quick Commands:**
+```bash
+# Add high priority location
+python3 scripts/manage_locations.py add "Las Vegas, NV" --priority high
+
+# List by priority
+python3 scripts/manage_locations.py list --priority high
+
+# Process only high priority
+python3 orchestration/flow.py --locations $(python3 scripts/manage_locations.py list --priority high)
+```
+
+---
 
 ### API Keys
 
@@ -305,6 +479,44 @@ python3 -m pytest tests/ --cov=ingestion --cov-report=html
 2. **BigQuery Connection**: Verify your BigQuery credentials and service account permissions
 3. **Missing Dependencies**: Run `pip3 install -r requirements.txt`
 4. **Path Issues**: Ensure you're running commands from the project root
+5. **Location Priority**: Use priority levels to control resource usage and processing order
+6. **API Rate Limits**: Disable low priority locations if hitting rate limits
+7. **Spark Issues**: Check Java installation and PySpark dependencies
+8. **Streaming Issues**: Verify Kafka installation and configuration
+
+### **BigQuery Connection**
+```bash
+# Check credentials
+echo $GOOGLE_APPLICATION_CREDENTIALS
+echo $BIGQUERY_PROJECT_ID
+
+# Test connection
+python3 -c "from google.cloud import bigquery; print('Connection OK')"
+```
+
+### **Spark Issues**
+```bash
+# Check Java installation
+java -version
+
+# Check PySpark installation
+python3 -c "import pyspark; print('PySpark OK')"
+
+# Memory issues - increase allocation
+# Edit config/locations.yml:
+# spark_memory: "8g"  # Increase from 2g
+```
+
+### **Streaming Issues**
+```bash
+# Check Kafka installation
+kafka-topics.sh --list --bootstrap-server localhost:9092
+
+# Check streaming configuration
+# Edit config/locations.yml:
+# spark_streaming_enabled: true
+# kafka_bootstrap_servers: "localhost:9092"
+```
 
 ### Debug Mode
 

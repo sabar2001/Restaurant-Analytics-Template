@@ -6,8 +6,14 @@ python-dotenv
 # Orchestration
 prefect
 
-# Big Data
+# Big Data Processing
 pyspark
+spark-sql
+spark-streaming
+
+# Optional Spark dependencies
+kafka-python  # For streaming
+pyspark-sql
 
 # Data Warehouse
 google-cloud-bigquery

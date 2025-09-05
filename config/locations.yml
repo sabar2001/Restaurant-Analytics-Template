@@ -49,6 +49,19 @@ settings:
   batch_size: 5
   retry_attempts: 3
   cache_duration_hours: 24
+  
+  # Spark Configuration
+  use_spark: true
+  spark_master: "local[*]"
+  spark_app_name: "RestaurantAnalytics"
+  spark_memory: "2g"
+  spark_cores: 4
+  spark_streaming_enabled: false
+  
+  # Streaming Configuration (when enabled)
+  kafka_bootstrap_servers: "localhost:9092"
+  kafka_topic: "restaurant_data"
+  streaming_batch_interval: 30  # seconds
 categories:
   major_cities:
   - San Francisco, CA
