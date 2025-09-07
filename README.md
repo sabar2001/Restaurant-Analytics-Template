@@ -60,7 +60,7 @@ This project demonstrates:
 │                            TRANSFORMATION LAYER                               │
 ├─────────────────┬─────────────────┬─────────────────┬─────────────────────────┤
 │   dbt Models    │   SQL           │   Data          │    ML Features          │
-│   (Staging)     │   Transformations│   Quality       │    Engineering         │
+│   (Staging)     │   Transformation│   Quality       │    Engineering          │
 │                 │   (Marts)       │   Checks        │    (Future)             │
 └─────────────────┴─────────────────┴─────────────────┴─────────────────────────┘
          │                   │                   │                   │
@@ -69,7 +69,7 @@ This project demonstrates:
 │                            VISUALIZATION LAYER                                │
 ├─────────────────┬─────────────────┬─────────────────┬─────────────────────────┤
 │   Streamlit     │   Interactive   │   Real-time     │    Reports              │
-│   Dashboard     │   Analytics      │   Dashboards    │    & Exports           │
+│   Dashboard     │   Analytics     │   Dashboards    │    & Exports            │
 └─────────────────┴─────────────────┴─────────────────┴─────────────────────────┘
 ```
 
