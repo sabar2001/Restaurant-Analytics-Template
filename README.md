@@ -13,7 +13,65 @@ This project demonstrates:
 
 ## 🚀 Architecture
 
-![Architecture Diagram](docs/architecture.png)
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                                DATA SOURCES                                     │
+├─────────────────┬─────────────────┬─────────────────┬─────────────────────────┤
+│   Yelp API      │ Google Places   │   Kafka Stream  │    Future Sources        │
+│   (REST)        │     API         │   (Real-time)   │    (OpenTable, etc.)    │
+└─────────────────┴─────────────────┴─────────────────┴─────────────────────────┘
+         │                   │                   │                   │
+         ▼                   ▼                   ▼                   ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              INGESTION LAYER                                   │
+├─────────────────┬─────────────────┬─────────────────┬─────────────────────────┤
+│   Python        │   Data          │   Location      │    Streaming            │
+│   Requests      │   Cleaning      │   Management    │    Processing           │
+│   & Parsing     │   & Validation  │   System        │    (Spark)              │
+└─────────────────┴─────────────────┴─────────────────┴─────────────────────────┘
+         │                   │                   │                   │
+         ▼                   ▼                   ▼                   ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                            PROCESSING ENGINE                                   │
+├─────────────────┬─────────────────┬─────────────────┬─────────────────────────┤
+│   Pandas        │   Apache Spark  │   Hybrid         │    Real-time             │
+│   (Small Data)  │   (Large Data)  │   Processing    │    Streaming            │
+│   Fallback      │   Distributed   │   Auto-fallback │    (Spark Streaming)    │
+└─────────────────┴─────────────────┴─────────────────┴─────────────────────────┘
+         │                   │                   │                   │
+         ▼                   ▼                   ▼                   ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                           ORCHESTRATION LAYER                                  │
+├─────────────────┬─────────────────┬─────────────────┬─────────────────────────┤
+│   Prefect       │   Workflow      │   Scheduling    │    Monitoring            │
+│   Flows         │   Management    │   & Triggers    │    & Logging             │
+└─────────────────┴─────────────────┴─────────────────┴─────────────────────────┘
+         │                   │                   │                   │
+         ▼                   ▼                   ▼                   ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                            DATA WAREHOUSE                                      │
+├─────────────────┬─────────────────┬─────────────────┬─────────────────────────┤
+│   BigQuery      │   Raw Tables    │   Analytics     │    Streaming            │
+│   (Cloud)       │   (Staging)     │   Schema        │    Tables               │
+└─────────────────┴─────────────────┴─────────────────┴─────────────────────────┘
+         │                   │                   │                   │
+         ▼                   ▼                   ▼                   ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                            TRANSFORMATION LAYER                               │
+├─────────────────┬─────────────────┬─────────────────┬─────────────────────────┤
+│   dbt Models    │   SQL           │   Data          │    ML Features           │
+│   (Staging)     │   Transformations│   Quality       │    Engineering           │
+│                 │   (Marts)       │   Checks        │    (Future)              │
+└─────────────────┴─────────────────┴─────────────────┴─────────────────────────┘
+         │                   │                   │                   │
+         ▼                   ▼                   ▼                   ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                            VISUALIZATION LAYER                                │
+├─────────────────┬─────────────────┬─────────────────┬─────────────────────────┤
+│   Streamlit     │   Interactive   │   Real-time     │    Reports               │
+│   Dashboard     │   Analytics      │   Dashboards    │    & Exports             │
+└─────────────────┴─────────────────┴─────────────────┴─────────────────────────┘
+```
 
 **Flow**:  
 APIs (Yelp, Google Places, Kafka Stream) → **Spark/Pandas ingestion & processing** → **BigQuery (raw)** → **dbt models** → **BigQuery (analytics schema)** → **Streamlit dashboard**
@@ -168,7 +226,7 @@ restaurant-analytics-template/
 │   └── test_ingestion.py       # Ingestion tests
 │
 ├── docs/                        # Documentation
-│   └── architecture.png         # Architecture diagram
+│   └── architecture.txt         # Architecture documentation
 │
 ├── .gitignore
 ├── requirements.txt
