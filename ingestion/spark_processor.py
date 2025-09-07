@@ -24,20 +24,17 @@ class SparkRestaurantProcessor:
             from pyspark.sql.functions import col, explode, regexp_extract, when, current_timestamp
             from pyspark.sql.types import StructType, StructField, StringType, FloatType, IntegerType, TimestampType
             
-            # Spark configuration
-            spark_config = {
-                'spark.app.name': self.config.get('spark_app_name', 'RestaurantAnalytics'),
-                'spark.master': self.config.get('spark_master', 'local[*]'),
-                'spark.executor.memory': self.config.get('spark_memory', '2g'),
-                'spark.executor.cores': self.config.get('spark_cores', 4),
-                'spark.sql.adaptive.enabled': 'true',
-                'spark.sql.adaptive.coalescePartitions.enabled': 'true'
-            }
+            # Create Spark session builder
+            builder = SparkSession.builder \
+                .appName(self.config.get('spark_app_name', 'RestaurantAnalytics')) \
+                .master(self.config.get('spark_master', 'local[*]')) \
+                .config('spark.executor.memory', self.config.get('spark_memory', '2g')) \
+                .config('spark.executor.cores', self.config.get('spark_cores', 4)) \
+                .config('spark.sql.adaptive.enabled', 'true') \
+                .config('spark.sql.adaptive.coalescePartitions.enabled', 'true')
             
             # Create Spark session
-            self.spark = SparkSession.builder \
-                .config(**spark_config) \
-                .getOrCreate()
+            self.spark = builder.getOrCreate()
             
             # Import functions for use in methods
             self.col = col
@@ -159,11 +156,11 @@ class SparkRestaurantProcessor:
         df['city'] = df['formatted_address'].str.extract(r'([^,]+),\s*([^,]+),\s*([A-Z]{2})')[0]
         df['state'] = df['formatted_address'].str.extract(r'([^,]+),\s*([^,]+),\s*([A-Z]{2})')[2]
         
-        # Convert data types
-        df['price_level'] = df['price_level'].astype(int)
-        df['review_count'] = df['user_ratings_total'].astype(int)
-        df['latitude'] = df['latitude'].astype(float)
-        df['longitude'] = df['longitude'].astype(float)
+        # Convert data types safely
+        df['price_level'] = pd.to_numeric(df.get('price_level', 0), errors='coerce').fillna(0).astype(int)
+        df['review_count'] = pd.to_numeric(df.get('user_ratings_total', 0), errors='coerce').fillna(0).astype(int)
+        df['latitude'] = pd.to_numeric(df.get('latitude', 0), errors='coerce').fillna(0).astype(float)
+        df['longitude'] = pd.to_numeric(df.get('longitude', 0), errors='coerce').fillna(0).astype(float)
         
         # Add derived fields
         df['processed_at'] = pd.Timestamp.now()

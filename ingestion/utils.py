@@ -24,11 +24,28 @@ def get_api_key(service: str) -> Optional[str]:
         return None
     
     api_key = os.getenv(key_name)
-    if not api_key:
-        logger.error(f"API key not found for {service}")
+    if not api_key or api_key.startswith('your_'):
+        logger.warning(f"API key not found or not configured for {service}")
         return None
     
     return api_key
+
+def get_available_apis() -> Dict[str, bool]:
+    """Check which API keys are available and valid."""
+    apis = {
+        'yelp': get_api_key('yelp') is not None,
+        'google_places': get_api_key('google') is not None
+    }
+    
+    available_count = sum(apis.values())
+    available_names = [api for api, available in apis.items() if available]
+    
+    if available_count == 0:
+        logger.error("❌ No API keys configured! Please add at least one API key to .env file")
+    else:
+        logger.info(f"✅ Available APIs: {available_names} ({available_count}/2)")
+    
+    return apis
 
 def get_bigquery_config() -> Dict[str, str]:
     """Get BigQuery connection configuration from environment variables."""
