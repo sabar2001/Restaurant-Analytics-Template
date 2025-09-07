@@ -34,7 +34,7 @@ This project demonstrates:
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                            PROCESSING ENGINE                                   │
 ├─────────────────┬─────────────────┬─────────────────┬─────────────────────────┤
-│   Pandas        │   Apache Spark  │   Hybrid         │    Real-time             │
+│   Pandas        │   Apache Spark  │   Hybrid         │    Real-time           │
 │   (Small Data)  │   (Large Data)  │   Processing    │    Streaming            │
 │   Fallback      │   Distributed   │   Auto-fallback │    (Spark Streaming)    │
 └─────────────────┴─────────────────┴─────────────────┴─────────────────────────┘
@@ -43,13 +43,13 @@ This project demonstrates:
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                           ORCHESTRATION LAYER                                  │
 ├─────────────────┬─────────────────┬─────────────────┬─────────────────────────┤
-│   Prefect       │   Workflow      │   Scheduling    │    Monitoring            │
-│   Flows         │   Management    │   & Triggers    │    & Logging             │
+│   Prefect       │   Workflow      │   Scheduling    │    Monitoring           │
+│   Flows         │   Management    │   & Triggers    │    & Logging            │
 └─────────────────┴─────────────────┴─────────────────┴─────────────────────────┘
          │                   │                   │                   │
          ▼                   ▼                   ▼                   ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                            DATA WAREHOUSE                                      │
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                            DATA WAREHOUSE                                     │
 ├─────────────────┬─────────────────┬─────────────────┬─────────────────────────┤
 │   BigQuery      │   Raw Tables    │   Analytics     │    Streaming            │
 │   (Cloud)       │   (Staging)     │   Schema        │    Tables               │
@@ -59,17 +59,17 @@ This project demonstrates:
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                            TRANSFORMATION LAYER                               │
 ├─────────────────┬─────────────────┬─────────────────┬─────────────────────────┤
-│   dbt Models    │   SQL           │   Data          │    ML Features           │
-│   (Staging)     │   Transformations│   Quality       │    Engineering           │
-│                 │   (Marts)       │   Checks        │    (Future)              │
+│   dbt Models    │   SQL           │   Data          │    ML Features          │
+│   (Staging)     │   Transformations│   Quality       │    Engineering         │
+│                 │   (Marts)       │   Checks        │    (Future)             │
 └─────────────────┴─────────────────┴─────────────────┴─────────────────────────┘
          │                   │                   │                   │
          ▼                   ▼                   ▼                   ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
+┌───────────────────────────────────────────────────────────────────────────────┐
 │                            VISUALIZATION LAYER                                │
 ├─────────────────┬─────────────────┬─────────────────┬─────────────────────────┤
-│   Streamlit     │   Interactive   │   Real-time     │    Reports               │
-│   Dashboard     │   Analytics      │   Dashboards    │    & Exports             │
+│   Streamlit     │   Interactive   │   Real-time     │    Reports              │
+│   Dashboard     │   Analytics      │   Dashboards    │    & Exports           │
 └─────────────────┴─────────────────┴─────────────────┴─────────────────────────┘
 ```
 
