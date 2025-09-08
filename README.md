@@ -83,6 +83,90 @@ APIs (Yelp, Google Places, Kafka Stream) → **Spark/Pandas ingestion & processi
 
 ---
 
+## ⚡ TLDR - Quick Setup
+
+**Get your restaurant analytics platform running in 10 minutes:**
+
+### **📋 Prerequisites**
+- Python 3.9+
+- Google Cloud account
+- Git
+
+### **🚀 Setup Steps**
+
+**1. Clone & Install**
+```bash
+git clone https://github.com/your-username/restaurant-analytics-template.git
+cd restaurant-analytics-template
+pip3 install -r requirements.txt
+```
+
+**2. Get API Keys**
+- **Google Cloud Console** → APIs & Services → Credentials
+  - Create **API Key** for Places API
+  - Create **Service Account** + download JSON key for BigQuery
+  - Enable: **Places API (New)**, **Geocoding API**, **BigQuery API**
+
+**3. Create `.env` File**
+```bash
+cp config/sample.env .env
+```
+
+**Edit `.env` with your credentials:**
+```env
+# Required - Google Places API
+GOOGLE_PLACES_API_KEY=your_google_places_api_key_here
+
+# Required - BigQuery (download JSON file from service account)
+GOOGLE_APPLICATION_CREDENTIALS=/full/path/to/your/service-account-key.json
+BIGQUERY_PROJECT_ID=your_google_cloud_project_id
+BIGQUERY_DATASET_ID=restaurant_db  # Create this dataset in BigQuery
+BIGQUERY_LOCATION=US
+
+# Optional - Yelp API (for additional data)
+YELP_API_KEY=your_yelp_api_key_here
+```
+
+**4. Create BigQuery Dataset**
+- Go to **BigQuery Console** → Create Dataset named `restaurant_db`
+
+**5. Run Pipeline**
+```bash
+# Process restaurants for San Francisco
+python3 orchestration/flow.py --locations "San Francisco, CA"
+```
+
+**6. Launch Dashboard**
+```bash
+# Start the Streamlit dashboard
+python3 -m streamlit run dashboards/app.py
+```
+
+**🎉 Done! Open http://localhost:8501 to see your restaurant analytics dashboard with real data!**
+
+### **🔧 Service Account Permissions**
+Your service account needs these BigQuery roles:
+- `BigQuery Data Editor`
+- `BigQuery Job User` 
+- `BigQuery User`
+
+### **📍 Adding More Cities**
+```bash
+# Add new locations easily
+python3 scripts/manage_locations.py add "Austin, TX"
+python3 scripts/manage_locations.py add "Seattle, WA"
+
+# Run pipeline for all enabled locations
+python3 orchestration/flow.py
+```
+
+### **⚠️ Common Issues**
+- **"REQUEST_DENIED"**: Enable Geocoding API in Google Cloud Console
+- **"Permission denied"**: Add BigQuery roles to your service account
+- **"Module not found"**: Run `pip3 install -r requirements.txt`
+
+---
+
 ## 🛠️ Tech Stack
 
 - **Apache Spark** – distributed processing & real-time streaming  

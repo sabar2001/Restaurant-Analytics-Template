@@ -65,11 +65,12 @@ def get_bigquery_config() -> Dict[str, str]:
     return config
 
 def flatten_json(data: Dict[str, Any], prefix: str = '') -> Dict[str, Any]:
-    """Flatten nested JSON structure for easier database storage."""
+    """Flatten nested JSON structure for easier database storage with BigQuery-compatible column names."""
     flattened = {}
     
     for key, value in data.items():
-        new_key = f"{prefix}.{key}" if prefix else key
+        # Use underscores instead of dots for BigQuery compatibility
+        new_key = f"{prefix}_{key}" if prefix else key
         
         if isinstance(value, dict):
             flattened.update(flatten_json(value, new_key))

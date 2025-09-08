@@ -66,23 +66,91 @@ if st.sidebar.button("View All Locations"):
 
 st.sidebar.markdown("---")
 
-# Mock data for demonstration (in real app, this would come from BigQuery)
+# Data loading functions
+@st.cache_data
+def load_real_data():
+    """Load real restaurant data from BigQuery."""
+    try:
+        # Import BigQuery and utils
+        from google.cloud import bigquery
+        import sys
+        import os
+        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from ingestion.utils import get_bigquery_config
+        
+        # Get BigQuery configuration
+        config = get_bigquery_config()
+        if not config:
+            st.error("BigQuery configuration not found. Check your .env file.")
+            return pd.DataFrame()
+        
+        # Initialize BigQuery client
+        client = bigquery.Client(
+            project=config.get('project_id'),
+            location=config.get('location')
+        )
+        
+        # Query to get restaurant data (limited to 500 for performance)
+        query = f"""
+        SELECT 
+            place_id,
+            restaurant_name as name,
+            rating,
+            review_count,
+            price_level,
+            price_category,
+            business_tier,
+            rating_category,
+            city,
+            state,
+            formatted_address,
+            latitude,
+            longitude,
+            data_source,
+            ingestion_timestamp,
+            processed_at
+        FROM `{config.get('project_id')}.{config.get('dataset_id')}.raw_restaurant_data`
+        ORDER BY rating DESC, review_count DESC
+        LIMIT 500
+        """
+        
+        # Execute query and convert to DataFrame
+        df = client.query(query).to_dataframe()
+        
+        if not df.empty:
+            # Add some derived columns for better dashboard display
+            df['review_volume_category'] = pd.cut(
+                df['review_count'], 
+                bins=[0, 10, 50, 200, float('inf')],
+                labels=['Very Low Volume', 'Low Volume', 'Medium Volume', 'High Volume']
+            )
+            
+            st.success(f"✅ Loaded {len(df)} real restaurants from BigQuery!")
+            return df
+        else:
+            return pd.DataFrame()
+            
+    except Exception as e:
+        st.error(f"Error loading real data from BigQuery: {e}")
+        st.info("💡 Make sure you've run the pipeline to load data into BigQuery")
+        return pd.DataFrame()
+
 @st.cache_data
 def load_sample_data():
-    """Load sample restaurant data for demonstration."""
+    """Load sample restaurant data for demonstration when no real data is available."""
     np.random.seed(42)
     
     # Generate sample data
-    n_restaurants = 100
+    n_restaurants = 50  # Reduced to make it clear it's demo data
     
     data = {
-        'restaurant_id': [f'REST_{i:03d}' for i in range(1, n_restaurants + 1)],
-        'restaurant_name': [f'Restaurant {i}' for i in range(1, n_restaurants + 1)],
+        'restaurant_id': [f'DEMO_{i:03d}' for i in range(1, n_restaurants + 1)],
+        'restaurant_name': [f'Demo Restaurant {i}' for i in range(1, n_restaurants + 1)],
         'rating': np.random.normal(3.8, 0.8, n_restaurants).clip(1, 5),
         'rating_category': np.random.choice(['Excellent', 'Very Good', 'Good', 'Average', 'Below Average'], n_restaurants, p=[0.1, 0.2, 0.4, 0.2, 0.1]),
-        'data_source': np.random.choice(['yelp', 'google_places'], n_restaurants),
-        'city': np.random.choice(['San Francisco', 'New York', 'Los Angeles', 'Chicago', 'Miami'], n_restaurants),
-        'state': np.random.choice(['CA', 'NY', 'LA', 'IL', 'FL'], n_restaurants),
+        'data_source': np.random.choice(['demo_data'], n_restaurants),  # Clear it's demo data
+        'city': np.random.choice(['San Francisco', 'New York', 'Los Angeles'], n_restaurants),
+        'state': np.random.choice(['CA', 'NY', 'CA'], n_restaurants),
         'price_level': np.random.choice([1, 2, 3, 4], n_restaurants, p=[0.3, 0.4, 0.2, 0.1]),
         'price_category': np.random.choice(['$', '$$', '$$$', '$$$$'], n_restaurants, p=[0.3, 0.4, 0.2, 0.1]),
         'review_count': np.random.poisson(50, n_restaurants),
@@ -96,8 +164,27 @@ def load_sample_data():
     
     return pd.DataFrame(data)
 
-# Load data
-df = load_sample_data()
+# Load data - try real data first, fallback to demo data
+df = load_real_data()
+is_demo_data = df.empty
+
+if is_demo_data:
+    df = load_sample_data()
+    
+    # Add warning about demo data
+    st.warning("""
+    ⚠️ **You're viewing DEMO DATA** ⚠️
+    
+    This dashboard is showing sample data because:
+    - Could not connect to BigQuery or no data found
+    - To load real data, run: `python3 orchestration/flow.py --locations "San Francisco, CA"`
+    - Check your BigQuery credentials in `.env` file
+    - Verify your BigQuery dataset `restaurant_db` contains data
+    
+    **All restaurant names like "Demo Restaurant 1" are fake for demonstration purposes.**
+    """)
+else:
+    st.success("✅ Showing real restaurant data from your pipeline!")
 
 # Filters
 st.sidebar.subheader("📍 Location Filter")
@@ -109,7 +196,7 @@ try:
         selected_locations = st.sidebar.multiselect(
             "Select Locations",
             options=available_locations,
-            default=available_locations[:3],
+            default=available_locations,
             help="Choose which locations to include in the analysis"
         )
     else:
@@ -124,14 +211,14 @@ if not selected_locations:
     selected_cities = st.sidebar.multiselect(
         "Select Cities (Fallback)",
         options=df['city'].unique(),
-        default=df['city'].unique()[:3]
+        default=list(df['city'].unique())
     )
 else:
-    # For demo purposes, we'll still use city filtering since our mock data uses cities
+    # Filter by cities available in the data
     selected_cities = st.sidebar.multiselect(
         "Select Cities",
         options=df['city'].unique(),
-        default=df['city'].unique()[:3]
+        default=list(df['city'].unique())
     )
 
 st.sidebar.subheader("⭐ Rating Filter")
@@ -173,7 +260,7 @@ with col2:
     avg_rating = filtered_df['rating'].mean()
     st.metric(
         label="Average Rating",
-        value=f"{avg_rating:.2f}",
+        value=f"⭐ {avg_rating:.2f}",
         delta=f"{avg_rating - df['rating'].mean():.2f}"
     )
 
@@ -186,12 +273,15 @@ with col3:
     )
 
 with col4:
-    premium_count = len(filtered_df[filtered_df['business_tier'] == 'Premium'])
-    st.metric(
-        label="Premium Restaurants",
-        value=premium_count,
-        delta=premium_count - len(df[df['business_tier'] == 'Premium'])
-    )
+    if not filtered_df.empty:
+        highest_rating = filtered_df['rating'].max()
+        st.metric(
+            label="Highest Rating",
+            value=f"⭐ {highest_rating:.1f}",
+            delta=f"{highest_rating - df['rating'].max():.1f}"
+        )
+    else:
+        st.metric(label="Highest Rating", value="N/A")
 
 # Charts
 st.markdown("---")
@@ -241,10 +331,11 @@ with col1:
 
 with col2:
     # Rating vs Price Level
-    price_rating = filtered_df.groupby('price_category')['rating'].mean().sort_index()
+    price_rating = filtered_df.groupby('price_category')['rating'].mean().reset_index()
     fig_price_rating = px.bar(
-        x=price_rating.index,
-        y=price_rating.values,
+        price_rating,
+        x='price_category',
+        y='rating',
         title='Average Rating by Price Level',
         color_discrete_sequence=['#2ca02c']
     )
@@ -291,6 +382,36 @@ fig_tier = px.bar(
 fig_tier.update_layout(showlegend=False)
 st.plotly_chart(fig_tier, use_container_width=True)
 
+# Rating Analysis Section
+st.markdown("---")
+st.subheader("⭐ Rating Analysis")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    # Rating distribution histogram
+    fig_rating_dist = px.histogram(
+        filtered_df,
+        x='rating',
+        nbins=20,
+        title='Rating Distribution',
+        labels={'rating': 'Rating', 'count': 'Number of Restaurants'},
+        color_discrete_sequence=['#ff7f0e']
+    )
+    fig_rating_dist.update_layout(showlegend=False)
+    st.plotly_chart(fig_rating_dist, use_container_width=True)
+
+with col2:
+    # Top rated restaurants
+    top_rated = filtered_df.nlargest(10, 'rating')[['name', 'rating', 'city', 'review_count']]
+    st.write("**🏆 Top 10 Highest Rated Restaurants**")
+    
+    for idx, row in top_rated.iterrows():
+        stars = "⭐" * int(row['rating']) + ("⭐" if (row['rating'] - int(row['rating'])) >= 0.5 else "")
+        st.write(f"**{row['name']}** - {stars} ({row['rating']:.1f})")
+        st.caption(f"{row['city']} • {row['review_count']} reviews")
+        st.write("")
+
 # Data table
 st.markdown("---")
 st.subheader("📋 Detailed Data View")
@@ -299,14 +420,42 @@ st.subheader("📋 Detailed Data View")
 search_term = st.text_input("🔍 Search restaurants by name:")
 
 if search_term:
-    search_df = filtered_df[filtered_df['restaurant_name'].str.contains(search_term, case=False, na=False)]
+    search_df = filtered_df[filtered_df['name'].str.contains(search_term, case=False, na=False)]
 else:
     search_df = filtered_df
 
-# Display the data
+# Display the data with enhanced ratings
+display_df = search_df[['name', 'city', 'rating', 'price_category', 'review_count', 'business_tier', 'data_source']].copy()
+
+# Add star rating column
+def rating_to_stars(rating):
+    """Convert numeric rating to star display."""
+    if pd.isna(rating):
+        return "No rating"
+    
+    full_stars = int(rating)
+    half_star = 1 if (rating - full_stars) >= 0.5 else 0
+    empty_stars = 5 - full_stars - half_star
+    
+    stars = "⭐" * full_stars + "⭐" * half_star + "☆" * empty_stars
+    return f"{stars} ({rating:.1f})"
+
+display_df['star_rating'] = display_df['rating'].apply(rating_to_stars)
+
+# Reorder columns to show star ratings prominently
+column_order = ['name', 'star_rating', 'city', 'price_category', 'review_count', 'business_tier', 'data_source']
 st.dataframe(
-    search_df[['restaurant_name', 'city', 'rating', 'price_category', 'review_count', 'business_tier', 'data_source']],
-    use_container_width=True
+    display_df[column_order],
+    use_container_width=True,
+    column_config={
+        "name": st.column_config.TextColumn("Restaurant Name", width="medium"),
+        "star_rating": st.column_config.TextColumn("Rating", width="medium"),
+        "city": st.column_config.TextColumn("City", width="small"),
+        "price_category": st.column_config.TextColumn("Price", width="small"),
+        "review_count": st.column_config.NumberColumn("Reviews", width="small"),
+        "business_tier": st.column_config.TextColumn("Tier", width="medium"),
+        "data_source": st.column_config.TextColumn("Source", width="small")
+    }
 )
 
 # Footer

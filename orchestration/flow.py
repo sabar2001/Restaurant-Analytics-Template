@@ -44,7 +44,7 @@ def ingest_yelp_data(location: str = "San Francisco, CA", limit: int = 50) -> pd
         logger.error(f"Error in Yelp ingestion: {e}")
         return pd.DataFrame()
 
-@task(cache_key_fn=task_input_hash, cache_expiration=timedelta(hours=1))
+@task  # Temporarily disable cache to force fresh API calls
 def ingest_google_places_data(location: str = "San Francisco, CA", radius: int = 5000) -> pd.DataFrame:
     """Ingest data from Google Places API."""
     try:
@@ -237,20 +237,56 @@ def restaurant_data_pipeline(
     
     # Combine data sources using Spark or pandas
     combined_data = combine_data_sources_with_spark(all_yelp_data, all_google_data, config)
+    logger.info(f"Returned from combine_data_sources_with_spark: type={type(combined_data)}, hasattr count={hasattr(combined_data, 'count') if combined_data is not None else False}")
     
-    # Check if we have valid data
+    # Check if we have valid data - ultra-defensive approach
     has_data = False
-    if combined_data is not None:
-        if hasattr(combined_data, 'count'):  # Spark DataFrame
-            try:
-                has_data = combined_data.count() > 0
-            except:
+    try:
+        if combined_data is not None:
+            logger.info(f"Combined data type: {type(combined_data)}")
+            
+            # Simple approach: try to get length, handle all edge cases
+            # Better Spark detection - check for specific Spark DataFrame type
+            if hasattr(combined_data, 'sql') or str(type(combined_data)).find('pyspark') != -1:  # Spark DataFrame
+                try:
+                    row_count = int(combined_data.count())
+                    has_data = row_count > 0
+                    logger.info(f"Spark DataFrame has {row_count} rows")
+                except Exception as e:
+                    logger.error(f"Failed to count Spark DataFrame rows: {e}")
+                    has_data = False
+                    
+            elif hasattr(combined_data, '__len__'):  # pandas DataFrame/Series or list
+                try:
+                    row_count = len(combined_data)
+                    # Additional check for pandas objects
+                    if hasattr(combined_data, 'empty'):
+                        # Safely check if empty without triggering Series ambiguity
+                        try:
+                            is_empty_check = combined_data.shape[0] == 0  # Use shape instead of .empty
+                        except:
+                            is_empty_check = row_count == 0
+                        has_data = row_count > 0 and not is_empty_check
+                    else:
+                        has_data = row_count > 0
+                    logger.info(f"Data object has {row_count} rows")
+                except Exception as e:
+                    logger.error(f"Error checking data length: {e}")
+                    has_data = False
+            else:
+                logger.warning(f"Unknown data type: {type(combined_data)}")
                 has_data = False
-        elif hasattr(combined_data, '__len__'):  # pandas DataFrame
-            try:
-                has_data = len(combined_data) > 0 and not combined_data.empty
-            except:
-                has_data = False
+        else:
+            logger.warning("combined_data is None")
+            has_data = False
+            
+    except Exception as e:
+        logger.error(f"Critical error in data checking: {e}")
+        has_data = False
+    
+    # Ensure has_data is always a boolean
+    has_data = bool(has_data)
+    logger.info(f"Final has_data = {has_data}")
     
     if has_data:
         # Validate data quality
