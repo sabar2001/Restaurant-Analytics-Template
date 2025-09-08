@@ -17,8 +17,8 @@ class GooglePlacesIngestion:
             'Content-Type': 'application/json'
         }
     
-    def search_nearby_places(self, location: str, radius: int = 5000, type: str = "restaurant") -> List[Dict[str, Any]]:
-        """Search for nearby places using Google Places API (New)."""
+    def search_nearby_places(self, location: str, radius: int = 5000, type: str = "restaurant", target_count: int = 500) -> List[Dict[str, Any]]:
+        """Search for nearby places using Google Places API (New) with large-scale data collection."""
         if not self.api_key:
             logger.error("Google Places API key not available")
             return []
@@ -28,14 +28,88 @@ class GooglePlacesIngestion:
         if not coords:
             return []
         
+        logger.info(f"🚀 Starting large-scale data collection for {location}")
+        logger.info(f"Target: {target_count} restaurants using Spark-enabled pipeline")
+        
+        all_places = []
+        
+        # Strategy 1: Multiple radius searches (concentric circles)
+        radii = [2000, 5000, 10000, 15000, 20000]  # Expanding search radius
+        for search_radius in radii:
+            if len(all_places) >= target_count:
+                break
+                
+            logger.info(f"🔍 Searching radius {search_radius}m around {location}")
+            places = self._search_with_radius(coords, search_radius, type)
+            new_places = self._deduplicate_places(all_places, places)
+            all_places.extend(new_places)
+            logger.info(f"Found {len(new_places)} new places (total: {len(all_places)})")
+        
+        # Strategy 2: Different restaurant types for diversity
+        restaurant_types = ["restaurant", "meal_takeaway", "meal_delivery", "cafe", "bar", "bakery"]
+        for search_type in restaurant_types:
+            if len(all_places) >= target_count:
+                break
+                
+            logger.info(f"🍽️ Searching for {search_type} in {location}")
+            places = self._search_with_radius(coords, radius, search_type)
+            new_places = self._deduplicate_places(all_places, places)
+            all_places.extend(new_places)
+            logger.info(f"Found {len(new_places)} new {search_type} places (total: {len(all_places)})")
+        
+        # Strategy 3: Nearby areas search (offset coordinates)
+        if len(all_places) < target_count:
+            logger.info(f"🗺️ Expanding search to nearby areas around {location}")
+            offsets = [
+                (0.01, 0.01), (-0.01, -0.01), (0.01, -0.01), (-0.01, 0.01),  # Diagonal offsets
+                (0.02, 0), (-0.02, 0), (0, 0.02), (0, -0.02)  # Cardinal offsets
+            ]
+            
+            for lat_offset, lng_offset in offsets:
+                if len(all_places) >= target_count:
+                    break
+                    
+                offset_coords = {
+                    'lat': coords['lat'] + lat_offset,
+                    'lng': coords['lng'] + lng_offset
+                }
+                places = self._search_with_radius(offset_coords, radius, type)
+                new_places = self._deduplicate_places(all_places, places)
+                all_places.extend(new_places)
+                logger.info(f"Found {len(new_places)} new places from offset search (total: {len(all_places)})")
+        
+        logger.info(f"✅ Completed large-scale collection: {len(all_places)} restaurants for {location}")
+        return all_places[:target_count]  # Limit to target count
+    
+    def _search_with_radius(self, coords: Dict[str, float], radius: int, type: str) -> List[Dict[str, Any]]:
+        """Helper method to search with specific coordinates and radius."""
         # Try new Places API (New) first
         new_results = self._search_nearby_new_api(coords, radius, type)
         if new_results:
             return new_results
         
         # Fallback to legacy API if new API fails
-        logger.warning("New Places API failed, trying legacy API")
         return self._search_nearby_legacy_api(coords, radius, type)
+    
+    def _deduplicate_places(self, existing_places: List[Dict], new_places: List[Dict]) -> List[Dict]:
+        """Remove duplicate places based on place_id or name+address."""
+        existing_ids = {place.get('place_id', '') for place in existing_places}
+        existing_signatures = {
+            f"{place.get('name', '')}-{place.get('formatted_address', '')}" 
+            for place in existing_places
+        }
+        
+        unique_places = []
+        for place in new_places:
+            place_id = place.get('place_id', '')
+            signature = f"{place.get('name', '')}-{place.get('formatted_address', '')}"
+            
+            if place_id not in existing_ids and signature not in existing_signatures:
+                unique_places.append(place)
+                existing_ids.add(place_id)
+                existing_signatures.add(signature)
+        
+        return unique_places
     
     def _search_nearby_new_api(self, coords: Dict[str, float], radius: int, type: str) -> List[Dict[str, Any]]:
         """Search using the new Places API (v1)."""

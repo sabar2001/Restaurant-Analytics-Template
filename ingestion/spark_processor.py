@@ -102,28 +102,7 @@ class SparkRestaurantProcessor:
             .withColumn("review_count", col("user_ratings_total").cast("integer")) \
             .withColumn("latitude", col("latitude").cast("float")) \
             .withColumn("longitude", col("longitude").cast("float")) \
-            .withColumn("processed_at", current_timestamp()) \
-            .withColumn("rating_category",
-                when(col("rating") >= 4.5, "Excellent")
-                .when(col("rating") >= 4.0, "Very Good")
-                .when(col("rating") >= 3.5, "Good")
-                .when(col("rating") >= 3.0, "Average")
-                .otherwise("Below Average")
-            ) \
-            .withColumn("price_category",
-                when(col("price_level") == 1, "$")
-                .when(col("price_level") == 2, "$$")
-                .when(col("price_level") == 3, "$$$")
-                .when(col("price_level") == 4, "$$$$")
-                .otherwise("Unknown")
-            ) \
-            .withColumn("business_tier",
-                when((col("rating") >= 4.5) & (col("review_count") >= 100), "Premium")
-                .when((col("rating") >= 4.0) & (col("review_count") >= 50), "High Quality")
-                .when(col("rating") >= 3.5, "Good Quality")
-                .when(col("rating") >= 3.0, "Standard")
-                .otherwise("Needs Improvement")
-            )
+            .withColumn("ingestion_timestamp", current_timestamp())
         
         return processed_df
     
@@ -146,74 +125,45 @@ class SparkRestaurantProcessor:
             return pd.DataFrame()
     
     def _apply_pandas_transformations(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Apply data transformations using pandas."""
-        # Clean and standardize data
-        # Handle missing 'name' column safely
-        if 'name' in df.columns:
-            df['restaurant_name'] = df['name']
-        elif 'restaurant_name' not in df.columns:
-            df['restaurant_name'] = df.get('business_name', 'Unknown Restaurant')
+        """Apply minimal transformations to pandas DataFrame - most logic moved to dbt."""
+        logger.info(f"Applying minimal pandas transformations to {len(df)} records")
         
-        # Handle missing rating column safely
-        if 'rating' in df.columns:
-            df['rating'] = pd.to_numeric(df['rating'], errors='coerce').fillna(0).clip(0, 5)
-        else:
-            df['rating'] = 0
-            
-        # Handle missing data_source column safely  
-        if 'data_source' in df.columns:
-            df['data_source'] = df['data_source'].astype(str)
-        else:
-            df['data_source'] = 'unknown'
+        # Only ensure required columns exist for raw data storage - dbt handles the rest
+        required_columns = {
+            'name': 'Unknown Restaurant',
+            'rating': None,
+            'data_source': 'unknown',
+            'formatted_address': '',
+            'price_level': None,
+            'user_ratings_total': None,
+            'latitude': None,
+            'longitude': None,
+            'place_id': None,
+            'city': None,
+            'state': None,
+            'categories': None
+        }
         
-        # Extract location information safely
-        if 'formatted_address' in df.columns:
-            df['city'] = df['formatted_address'].str.extract(r'([^,]+),\s*([^,]+),\s*([A-Z]{2})')[0]
-            df['state'] = df['formatted_address'].str.extract(r'([^,]+),\s*([^,]+),\s*([A-Z]{2})')[2]
-        else:
-            df['city'] = 'Unknown'
-            df['state'] = 'Unknown'
+        for col, default_val in required_columns.items():
+            if col not in df.columns:
+                df[col] = default_val
+                logger.debug(f"Missing column '{col}', added with default value")
         
-        # Convert data types safely using column-based approach
-        # Handle price_level
-        if 'price_level' in df.columns:
-            df['price_level'] = pd.to_numeric(df['price_level'], errors='coerce').fillna(0).astype(int)
-        else:
-            df['price_level'] = 0
-            
-        # Handle review_count from user_ratings_total
-        if 'user_ratings_total' in df.columns:
-            df['review_count'] = pd.to_numeric(df['user_ratings_total'], errors='coerce').fillna(0).astype(int)
-        else:
-            df['review_count'] = 0
-            
-        # Handle latitude
-        if 'latitude' in df.columns:
-            df['latitude'] = pd.to_numeric(df['latitude'], errors='coerce').fillna(0.0).astype(float)
-        else:
-            df['latitude'] = 0.0
-            
-        # Handle longitude
-        if 'longitude' in df.columns:
-            df['longitude'] = pd.to_numeric(df['longitude'], errors='coerce').fillna(0.0).astype(float)
-        else:
-            df['longitude'] = 0.0
+        # Minimal processing - just ensure data types won't break BigQuery
+        # Convert obvious numeric columns to avoid type inference issues
+        numeric_columns = ['rating', 'price_level', 'user_ratings_total', 'latitude', 'longitude']
+        for col in numeric_columns:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
         
-        # Add derived fields
-        df['processed_at'] = pd.Timestamp.now()
-        df['rating_category'] = pd.cut(df['rating'], 
-            bins=[0, 3, 3.5, 4, 4.5, 5], 
-            labels=['Below Average', 'Average', 'Good', 'Very Good', 'Excellent']
-        )
-        df['price_category'] = df['price_level'].map({1: '$', 2: '$$', 3: '$$$', 4: '$$$$'})
+        # Add basic audit fields - everything else handled by dbt
+        df['ingestion_timestamp'] = pd.Timestamp.now()
         
-        # Business tier logic
-        df['business_tier'] = 'Standard'
-        df.loc[(df['rating'] >= 4.5) & (df['review_count'] >= 100), 'business_tier'] = 'Premium'
-        df.loc[(df['rating'] >= 4.0) & (df['review_count'] >= 50), 'business_tier'] = 'High Quality'
-        df.loc[df['rating'] >= 3.5, 'business_tier'] = 'Good Quality'
-        df.loc[df['rating'] < 3.0, 'business_tier'] = 'Needs Improvement'
+        # Remove any columns with all null values to keep data clean
+        df = df.dropna(axis=1, how='all')
         
+        logger.info(f"Processed {len(df)} records with {len(df.columns)} columns for raw storage")
+        logger.info("✨ Business logic and transformations now handled by dbt models")
         return df
     
     def combine_data_sources(self, dataframes: List[Union[pd.DataFrame, Any]]) -> Union[pd.DataFrame, Any]:

@@ -45,8 +45,8 @@ def ingest_yelp_data(location: str = "San Francisco, CA", limit: int = 50) -> pd
         return pd.DataFrame()
 
 @task  # Temporarily disable cache to force fresh API calls
-def ingest_google_places_data(location: str = "San Francisco, CA", radius: int = 5000) -> pd.DataFrame:
-    """Ingest data from Google Places API."""
+def ingest_google_places_data(location: str = "San Francisco, CA", radius: int = 10000, target_count: int = 500) -> pd.DataFrame:
+    """Ingest large-scale data from Google Places API."""
     try:
         from ingestion.utils import get_api_key
         
@@ -55,12 +55,15 @@ def ingest_google_places_data(location: str = "San Francisco, CA", radius: int =
             logger.warning("Google Places API key not configured - skipping Google Places data")
             return pd.DataFrame()
         
+        logger.info(f"🚀 Starting LARGE-SCALE Google Places ingestion for {location}")
+        logger.info(f"Target: {target_count} restaurants with expanded search strategies")
+        
         google = GooglePlacesIngestion()
-        places = google.search_nearby_places(location, radius, "restaurant")
+        places = google.search_nearby_places(location, radius, "restaurant", target_count)
         
         if places:
             df = google.process_places_data(places)
-            logger.info(f"Successfully ingested {len(df)} Google Places records")
+            logger.info(f"✅ Successfully ingested {len(df)} Google Places records for {location}")
             return df
         else:
             logger.warning("No Google Places data retrieved")

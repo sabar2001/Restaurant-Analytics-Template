@@ -1,97 +1,106 @@
-{{
-  config(
-    materialized='view'
-  )
-}}
+{{ config(materialized='view') }}
 
+-- Working staging model for our actual BigQuery data schema
 WITH source AS (
-    SELECT * FROM {{ source('raw_data', 'raw_restaurant_data') }}
+    SELECT * FROM {{ source('restaurant_db', 'raw_restaurant_data') }}
 ),
 
 cleaned AS (
     SELECT
-        -- Standardize ID field
-        COALESCE(id, CONCAT('unknown_', ROW_NUMBER() OVER (ORDER BY ingestion_timestamp))) AS restaurant_id,
+        -- Use place_id as the primary identifier
+        COALESCE(place_id, CONCAT('unknown_', ROW_NUMBER() OVER (ORDER BY ingestion_timestamp))) AS restaurant_id,
         
-        -- Clean and standardize name
-        TRIM(name) AS restaurant_name,
+        -- Clean restaurant name
+        TRIM(COALESCE(name, 'Unknown Restaurant')) AS restaurant_name,
         
-        -- Standardize rating (ensure it's between 0 and 5)
+        -- Validate rating
         CASE 
+            WHEN rating IS NULL THEN NULL
             WHEN rating < 0 THEN 0
             WHEN rating > 5 THEN 5
             ELSE rating
         END AS rating,
         
-        -- Standardize data source
-        LOWER(data_source) AS data_source,
+        -- Data source
+        LOWER(COALESCE(data_source, 'unknown')) AS data_source,
         
-        -- Extract location information if available
-        COALESCE(
-            SAFE_CAST(REGEXP_EXTRACT(formatted_address, r'([^,]+),\s*([^,]+),\s*([A-Z]{2})', 1) AS STRING),
-            'Unknown'
-        ) AS city,
+        -- Extract city and state from formatted_address using BigQuery regex
+        TRIM(REGEXP_EXTRACT(formatted_address, r'^([^,]+)')) AS city,
+        TRIM(REGEXP_EXTRACT(formatted_address, r'([A-Z]{2})\s+\d+')) AS state,
         
-        COALESCE(
-            SAFE_CAST(REGEXP_EXTRACT(formatted_address, r'([^,]+),\s*([^,]+),\s*([A-Z]{2})', 3) AS STRING),
-            'Unknown'
-        ) AS state,
+        -- Price level with validation
+        CASE 
+            WHEN price_level IS NULL THEN NULL
+            WHEN price_level < 0 THEN 0
+            WHEN price_level > 4 THEN 4
+            ELSE CAST(price_level AS INT64)
+        END AS price_level,
         
-        -- Extract price level if available
-        COALESCE(price_level, 0) AS price_level,
+        -- Review count
+        COALESCE(CAST(user_ratings_total AS INT64), 0) AS review_count,
         
-        -- Extract review count if available
-        COALESCE(user_ratings_total, 0) AS review_count,
+        -- Coordinates
+        CAST(geometry_location_lat AS FLOAT64) AS latitude,
+        CAST(geometry_location_lng AS FLOAT64) AS longitude,
         
-        -- Extract categories/tags if available
-        COALESCE(categories, '[]') AS categories,
-        
-        -- Standardize coordinates
-        SAFE_CAST(latitude AS FLOAT64) AS latitude,
-        SAFE_CAST(longitude AS FLOAT64) AS longitude,
+        -- Other fields
+        COALESCE(formatted_address, '') AS formatted_address,
+        COALESCE(types, '[]') AS categories,
         
         -- Timestamps
         ingestion_timestamp,
-        CURRENT_TIMESTAMP() AS processed_at
+        CURRENT_DATETIME() AS processed_at
         
     FROM source
-    WHERE name IS NOT NULL  -- Filter out records without names
+    WHERE name IS NOT NULL 
+      AND rating IS NOT NULL
+      AND geometry_location_lat IS NOT NULL 
+      AND geometry_location_lng IS NOT NULL
 ),
 
-final AS (
+enriched AS (
     SELECT
-        restaurant_id,
-        restaurant_name,
-        rating,
-        data_source,
-        city,
-        state,
-        price_level,
-        review_count,
-        categories,
-        latitude,
-        longitude,
-        ingestion_timestamp,
-        processed_at,
+        *,
         
-        -- Add some derived fields
+        -- Add derived fields using CASE statements (database-agnostic)
         CASE 
+            WHEN rating IS NULL THEN 'No Rating'
             WHEN rating >= 4.5 THEN 'Excellent'
             WHEN rating >= 4.0 THEN 'Very Good'
             WHEN rating >= 3.5 THEN 'Good'
             WHEN rating >= 3.0 THEN 'Average'
-            ELSE 'Below Average'
+            WHEN rating >= 2.0 THEN 'Below Average'
+            ELSE 'Poor'
         END AS rating_category,
         
         CASE 
-            WHEN price_level = 1 THEN '$'
-            WHEN price_level = 2 THEN '$$'
-            WHEN price_level = 3 THEN '$$$'
-            WHEN price_level = 4 THEN '$$$$'
+            WHEN price_level IS NULL THEN 'Unknown'
+            WHEN price_level = 0 THEN 'Free'
+            WHEN price_level = 1 THEN 'Budget'
+            WHEN price_level = 2 THEN 'Mid-range'
+            WHEN price_level = 3 THEN 'Expensive'
+            WHEN price_level = 4 THEN 'Very Expensive'
             ELSE 'Unknown'
-        END AS price_category
+        END AS price_category,
+        
+        CASE 
+            WHEN rating IS NULL OR review_count IS NULL THEN 'Unrated'
+            WHEN rating >= 4.0 AND review_count >= 100 THEN 'Premium'
+            WHEN rating >= 3.5 AND review_count >= 50 THEN 'Standard'
+            WHEN rating >= 3.0 AND review_count >= 10 THEN 'Basic'
+            ELSE 'New/Limited Reviews'
+        END AS business_tier,
+        
+        CASE 
+            WHEN review_count IS NULL THEN 'No Reviews'
+            WHEN review_count = 0 THEN 'No Reviews'
+            WHEN review_count <= 10 THEN 'Very Low Volume'
+            WHEN review_count <= 50 THEN 'Low Volume'
+            WHEN review_count <= 200 THEN 'Medium Volume'
+            ELSE 'High Volume'
+        END AS review_volume_category
         
     FROM cleaned
 )
 
-SELECT * FROM final
+SELECT * FROM enriched

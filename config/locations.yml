@@ -43,18 +43,54 @@ locations:
   country: US
   priority: high
   enabled: true
+- name: Philadelphia, PA
+  country: US
+  priority: high
+  enabled: true
+- name: Houston, TX
+  country: US
+  priority: high
+  enabled: true
+- name: Dallas, TX
+  country: US
+  priority: high
+  enabled: true
+- name: San Diego, CA
+  country: US
+  priority: high
+  enabled: true
+- name: San Antonio, TX
+  country: US
+  priority: medium
+  enabled: true
+- name: Washington, DC
+  country: US
+  priority: high
+  enabled: true
+- name: Atlanta, GA
+  country: US
+  priority: high
+  enabled: true
+- name: Las Vegas, NV
+  country: US
+  priority: medium
+  enabled: true
+- name: Detroit, MI
+  country: US
+  priority: medium
+  enabled: true
 settings:
-  default_yelp_limit: 50
-  default_google_radius: 5000
-  batch_size: 5
+  default_yelp_limit: 500  # 10x increase for large-scale ingestion
+  default_google_radius: 10000  # Expanded radius for more coverage  
+  batch_size: 10  # Process more locations in parallel
   retry_attempts: 3
   cache_duration_hours: 24
   
-  # Spark Configuration
-  use_spark: false  # Disabled until Java is installed
+  # Spark Configuration  
+  use_spark: true  # ✅ ENABLED - Java 11 installed!
   spark_master: "local[*]"
-  spark_app_name: "RestaurantAnalytics"
-  spark_memory: "2g"
+  spark_app_name: "RestaurantAnalytics-BigData"
+  spark_memory: "4g"  # Increased for large-scale processing
   spark_cores: 4
   spark_streaming_enabled: false
   

@@ -1,15 +1,11 @@
-{{
-  config(
-    materialized='table',
-    cluster_by=['city', 'state']
-  )
-}}
+{{ config(materialized='table') }}
 
+-- Analytics-ready restaurant dimension table
 WITH staging AS (
     SELECT * FROM {{ ref('stg_restaurants') }}
 ),
 
-restaurant_metrics AS (
+analytics_ready AS (
     SELECT
         restaurant_id,
         restaurant_name,
@@ -18,56 +14,6 @@ restaurant_metrics AS (
         data_source,
         city,
         state,
-        price_level,
-        price_category,
-        review_count,
-        categories,
-        latitude,
-        longitude,
-        ingestion_timestamp,
-        processed_at,
-        
-        -- Calculate some business metrics
-        CASE 
-            WHEN review_count >= 100 THEN 'High Volume'
-            WHEN review_count >= 50 THEN 'Medium Volume'
-            WHEN review_count >= 10 THEN 'Low Volume'
-            ELSE 'Very Low Volume'
-        END AS review_volume_category,
-        
-        -- Create a composite location key
-        CONCAT(COALESCE(city, 'Unknown'), ', ', COALESCE(state, 'Unknown')) AS full_location,
-        
-        -- Create a business tier based on rating and review count
-        CASE 
-            WHEN rating >= 4.5 AND review_count >= 100 THEN 'Premium'
-            WHEN rating >= 4.0 AND review_count >= 50 THEN 'High Quality'
-            WHEN rating >= 3.5 THEN 'Good Quality'
-            WHEN rating >= 3.0 THEN 'Standard'
-            ELSE 'Needs Improvement'
-        END AS business_tier,
-        
-        -- Add data freshness indicator
-        CASE 
-            WHEN DATE_DIFF(CURRENT_DATE(), DATE(ingestion_timestamp), DAY) <= 1 THEN 'Very Fresh'
-            WHEN DATE_DIFF(CURRENT_DATE(), DATE(ingestion_timestamp), DAY) <= 7 THEN 'Fresh'
-            WHEN DATE_DIFF(CURRENT_DATE(), DATE(ingestion_timestamp), DAY) <= 30 THEN 'Recent'
-            ELSE 'Stale'
-        END AS data_freshness
-        
-    FROM staging
-),
-
-final AS (
-    SELECT
-        restaurant_id,
-        restaurant_name,
-        rating,
-        rating_category,
-        data_source,
-        city,
-        state,
-        full_location,
         price_level,
         price_category,
         review_count,
@@ -75,16 +21,42 @@ final AS (
         categories,
         latitude,
         longitude,
+        formatted_address,
         business_tier,
-        data_freshness,
         ingestion_timestamp,
         processed_at,
         
-        -- Add audit fields
-        CURRENT_TIMESTAMP() AS dbt_updated_at,
-        '{{ invocation_id }}' AS dbt_run_id
+        -- Enhanced location information
+        CONCAT(COALESCE(city, 'Unknown'), ', ', COALESCE(state, 'Unknown')) AS full_location,
         
-    FROM restaurant_metrics
+        -- Additional analytics fields
+        CASE 
+            WHEN rating IS NOT NULL AND rating > 0 THEN 
+                ROUND(rating * CAST(review_count AS FLOAT64) / 100, 2)
+            ELSE 0
+        END AS weighted_rating_score,
+        
+        -- Market positioning score
+        CASE 
+            WHEN rating >= 4.0 AND review_count >= 50 AND price_level <= 2 THEN 'High Value'
+            WHEN rating >= 4.5 AND price_level >= 3 THEN 'Premium Experience'
+            WHEN rating >= 3.5 AND review_count >= 100 THEN 'Popular Choice'
+            WHEN rating >= 3.0 THEN 'Solid Option'
+            ELSE 'Emerging/Risky'
+        END AS market_positioning,
+        
+        -- Data quality score
+        (
+            CASE WHEN rating IS NOT NULL THEN 25 ELSE 0 END +
+            CASE WHEN review_count IS NOT NULL AND review_count > 0 THEN 25 ELSE 0 END +
+            CASE WHEN restaurant_name IS NOT NULL AND LENGTH(TRIM(restaurant_name)) > 0 THEN 25 ELSE 0 END +
+            CASE WHEN formatted_address IS NOT NULL AND LENGTH(TRIM(formatted_address)) > 0 THEN 25 ELSE 0 END
+        ) AS data_quality_score
+        
+    FROM staging
 )
 
-SELECT * FROM final
+SELECT 
+    *,
+    CURRENT_DATETIME() AS dbt_updated_at
+FROM analytics_ready

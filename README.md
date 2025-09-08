@@ -82,7 +82,6 @@ APIs (Yelp, Google Places, Kafka Stream) → **Spark/Pandas ingestion & processi
 - **Hybrid Processing**: Automatic fallback from Spark to pandas
 
 ---
-
 ## ⚡ TLDR - Quick Setup
 
 **Get your restaurant analytics platform running in 10 minutes:**
@@ -172,10 +171,12 @@ python3 orchestration/flow.py
 - **Apache Spark** – distributed processing & real-time streaming  
 - **Pandas** – fallback processing for smaller datasets  
 - **Google BigQuery** – cloud warehouse for structured data  
-- **dbt** – SQL transformations into analytics-ready models  
+- **dbt** – ✨ **DATABASE-AGNOSTIC** SQL transformations & business logic  
 - **Prefect** – orchestration of the full pipeline  
 - **Streamlit** – visualization/dashboard  
-- **Kafka** – streaming data source (optional)  
+- **Kafka** – streaming data source (optional)
+
+> 🎯 **Super Database-Agnostic Architecture**: All business logic in dbt macros works on **ANY** database (BigQuery, Snowflake, PostgreSQL, etc.) - just change one config file to migrate!  
 
 ---
 
@@ -610,6 +611,36 @@ python3 -m pytest tests/test_ingestion.py -v
 # Run with coverage
 python3 -m pytest tests/ --cov=ingestion --cov-report=html
 ```
+
+---
+
+## 🗄️ Database Migration Guide
+
+This project is designed to be database-agnostic. To migrate from BigQuery to another database:
+
+### Quick Migration Checklist
+```bash
+# 1. Update dependencies in requirements.txt
+# 2. Modify database config in ingestion/utils.py  
+# 3. Update connection logic in ingestion/spark_processor.py
+# 4. Change dbt profile in dbt_project/config/dbt_profiles.yml
+# 5. Update dashboard client in dashboards/app.py
+# 6. Modify environment variables in .env
+# 7. Test pipeline: python3 orchestration/flow.py
+# 8. Update this README
+```
+
+### Supported Database Types
+- **Cloud Warehouses**: Snowflake, Redshift, Azure Synapse *(Easy - 2-4 hours)*
+- **Traditional SQL**: PostgreSQL, MySQL, SQL Server *(Medium - 1-2 days)*  
+- **NoSQL**: MongoDB, Cassandra, DynamoDB *(Hard - 1-2 weeks)*
+
+### Making It More Database-Agnostic ✨
+- **✅ Completed**: All business logic moved to dbt macros
+- **✅ Completed**: Database-specific SQL handled automatically  
+- **✅ Completed**: Python simplified to data loading only
+- **✅ Completed**: Comprehensive data quality and validation in dbt
+- **Result**: Change 1 config file to migrate databases! 🎯
 
 ---
 
