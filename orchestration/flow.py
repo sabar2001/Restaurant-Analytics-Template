@@ -11,7 +11,7 @@ import logging
 
 from ingestion.yelp_ingest import YelpIngestion
 from ingestion.google_places_ingest import GooglePlacesIngestion
-from ingestion.utils import get_bigquery_config
+from ingestion.utils import get_bigquery_config, get_available_apis
 from ingestion.location_manager import LocationManager, get_enabled_locations
 from ingestion.spark_processor import SparkRestaurantProcessor
 from ingestion.spark_streaming import SparkStreamingProcessor
@@ -22,6 +22,13 @@ logger = logging.getLogger(__name__)
 def ingest_yelp_data(location: str = "San Francisco, CA", limit: int = 50) -> pd.DataFrame:
     """Ingest data from Yelp API."""
     try:
+        from ingestion.utils import get_api_key
+        
+        # Check if Yelp API key is available
+        if not get_api_key('yelp'):
+            logger.warning("Yelp API key not configured - skipping Yelp data")
+            return pd.DataFrame()
+        
         yelp = YelpIngestion()
         businesses = yelp.search_businesses(location, "restaurant", limit)
         
@@ -37,10 +44,17 @@ def ingest_yelp_data(location: str = "San Francisco, CA", limit: int = 50) -> pd
         logger.error(f"Error in Yelp ingestion: {e}")
         return pd.DataFrame()
 
-@task(cache_key_fn=task_input_hash, cache_expiration=timedelta(hours=1))
+@task  # Temporarily disable cache to force fresh API calls
 def ingest_google_places_data(location: str = "San Francisco, CA", radius: int = 5000) -> pd.DataFrame:
     """Ingest data from Google Places API."""
     try:
+        from ingestion.utils import get_api_key
+        
+        # Check if Google Places API key is available
+        if not get_api_key('google'):
+            logger.warning("Google Places API key not configured - skipping Google Places data")
+            return pd.DataFrame()
+        
         google = GooglePlacesIngestion()
         places = google.search_nearby_places(location, radius, "restaurant")
         
@@ -156,6 +170,12 @@ def restaurant_data_pipeline(
     
     logger.info(f"Using Spark: {config.get('use_spark', False)}")
     
+    # Check available APIs
+    available_apis = get_available_apis()
+    if not any(available_apis.values()):
+        logger.error("No API keys available! Please configure at least one API key in .env file")
+        return {"status": "error", "step": "api_configuration", "message": "No API keys configured"}
+    
     # Get locations to process
     if locations is None:
         if use_all_locations:
@@ -182,9 +202,15 @@ def restaurant_data_pipeline(
         logger.info(f"Processing location: {location}")
         
         try:
-            # Ingest data from multiple sources for this location
-            yelp_data = ingest_yelp_data(location, yelp_limit)
-            google_data = ingest_google_places_data(location, google_radius)
+            # Ingest data from available sources for this location
+            yelp_data = pd.DataFrame()
+            google_data = pd.DataFrame()
+            
+            if available_apis['yelp']:
+                yelp_data = ingest_yelp_data(location, yelp_limit)
+            
+            if available_apis['google_places']:
+                google_data = ingest_google_places_data(location, google_radius)
             
             # Store results
             all_yelp_data.append(yelp_data)
@@ -193,7 +219,8 @@ def restaurant_data_pipeline(
             location_results[location] = {
                 "yelp_records": len(yelp_data),
                 "google_records": len(google_data),
-                "status": "success"
+                "status": "success",
+                "apis_used": [api for api, available in available_apis.items() if available]
             }
             
             logger.info(f"Location {location}: Yelp={len(yelp_data)}, Google={len(google_data)}")
@@ -204,13 +231,64 @@ def restaurant_data_pipeline(
                 "yelp_records": 0,
                 "google_records": 0,
                 "status": "error",
-                "error": str(e)
+                "error": str(e),
+                "apis_used": []
             }
     
     # Combine data sources using Spark or pandas
     combined_data = combine_data_sources_with_spark(all_yelp_data, all_google_data, config)
+    logger.info(f"Returned from combine_data_sources_with_spark: type={type(combined_data)}, hasattr count={hasattr(combined_data, 'count') if combined_data is not None else False}")
     
-    if combined_data is not None and (hasattr(combined_data, 'count') and combined_data.count() > 0) or (hasattr(combined_data, '__len__') and len(combined_data) > 0):
+    # Check if we have valid data - ultra-defensive approach
+    has_data = False
+    try:
+        if combined_data is not None:
+            logger.info(f"Combined data type: {type(combined_data)}")
+            
+            # Simple approach: try to get length, handle all edge cases
+            # Better Spark detection - check for specific Spark DataFrame type
+            if hasattr(combined_data, 'sql') or str(type(combined_data)).find('pyspark') != -1:  # Spark DataFrame
+                try:
+                    row_count = int(combined_data.count())
+                    has_data = row_count > 0
+                    logger.info(f"Spark DataFrame has {row_count} rows")
+                except Exception as e:
+                    logger.error(f"Failed to count Spark DataFrame rows: {e}")
+                    has_data = False
+                    
+            elif hasattr(combined_data, '__len__'):  # pandas DataFrame/Series or list
+                try:
+                    row_count = len(combined_data)
+                    # Additional check for pandas objects
+                    if hasattr(combined_data, 'empty'):
+                        # Safely check if empty without triggering Series ambiguity
+                        try:
+                            is_empty_check = combined_data.shape[0] == 0  # Use shape instead of .empty
+                        except:
+                            is_empty_check = row_count == 0
+                        has_data = row_count > 0 and not is_empty_check
+                    else:
+                        has_data = row_count > 0
+                    logger.info(f"Data object has {row_count} rows")
+                except Exception as e:
+                    logger.error(f"Error checking data length: {e}")
+                    has_data = False
+            else:
+                logger.warning(f"Unknown data type: {type(combined_data)}")
+                has_data = False
+        else:
+            logger.warning("combined_data is None")
+            has_data = False
+            
+    except Exception as e:
+        logger.error(f"Critical error in data checking: {e}")
+        has_data = False
+    
+    # Ensure has_data is always a boolean
+    has_data = bool(has_data)
+    logger.info(f"Final has_data = {has_data}")
+    
+    if has_data:
         # Validate data quality
         if config.get('use_spark', False):
             # For Spark DataFrames, convert to pandas for validation
@@ -234,7 +312,9 @@ def restaurant_data_pipeline(
                 "locations_processed": len(locations),
                 "location_results": location_results,
                 "quality_metrics": quality_metrics,
-                "processing_engine": "Spark" if config.get('use_spark', False) else "Pandas"
+                "processing_engine": "Spark" if config.get('use_spark', False) else "Pandas",
+                "apis_used": [api for api, available in available_apis.items() if available],
+                "total_api_sources": sum(available_apis.values())
             }
         else:
             logger.error("Pipeline failed at BigQuery loading step")

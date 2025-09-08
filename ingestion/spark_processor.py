@@ -24,20 +24,17 @@ class SparkRestaurantProcessor:
             from pyspark.sql.functions import col, explode, regexp_extract, when, current_timestamp
             from pyspark.sql.types import StructType, StructField, StringType, FloatType, IntegerType, TimestampType
             
-            # Spark configuration
-            spark_config = {
-                'spark.app.name': self.config.get('spark_app_name', 'RestaurantAnalytics'),
-                'spark.master': self.config.get('spark_master', 'local[*]'),
-                'spark.executor.memory': self.config.get('spark_memory', '2g'),
-                'spark.executor.cores': self.config.get('spark_cores', 4),
-                'spark.sql.adaptive.enabled': 'true',
-                'spark.sql.adaptive.coalescePartitions.enabled': 'true'
-            }
+            # Create Spark session builder
+            builder = SparkSession.builder \
+                .appName(self.config.get('spark_app_name', 'RestaurantAnalytics')) \
+                .master(self.config.get('spark_master', 'local[*]')) \
+                .config('spark.executor.memory', self.config.get('spark_memory', '2g')) \
+                .config('spark.executor.cores', self.config.get('spark_cores', 4)) \
+                .config('spark.sql.adaptive.enabled', 'true') \
+                .config('spark.sql.adaptive.coalescePartitions.enabled', 'true')
             
             # Create Spark session
-            self.spark = SparkSession.builder \
-                .config(**spark_config) \
-                .getOrCreate()
+            self.spark = builder.getOrCreate()
             
             # Import functions for use in methods
             self.col = col
@@ -151,19 +148,56 @@ class SparkRestaurantProcessor:
     def _apply_pandas_transformations(self, df: pd.DataFrame) -> pd.DataFrame:
         """Apply data transformations using pandas."""
         # Clean and standardize data
-        df['restaurant_name'] = df['name']
-        df['rating'] = df['rating'].clip(0, 5)
-        df['data_source'] = df['data_source'].astype(str)
+        # Handle missing 'name' column safely
+        if 'name' in df.columns:
+            df['restaurant_name'] = df['name']
+        elif 'restaurant_name' not in df.columns:
+            df['restaurant_name'] = df.get('business_name', 'Unknown Restaurant')
         
-        # Extract location information
-        df['city'] = df['formatted_address'].str.extract(r'([^,]+),\s*([^,]+),\s*([A-Z]{2})')[0]
-        df['state'] = df['formatted_address'].str.extract(r'([^,]+),\s*([^,]+),\s*([A-Z]{2})')[2]
+        # Handle missing rating column safely
+        if 'rating' in df.columns:
+            df['rating'] = pd.to_numeric(df['rating'], errors='coerce').fillna(0).clip(0, 5)
+        else:
+            df['rating'] = 0
+            
+        # Handle missing data_source column safely  
+        if 'data_source' in df.columns:
+            df['data_source'] = df['data_source'].astype(str)
+        else:
+            df['data_source'] = 'unknown'
         
-        # Convert data types
-        df['price_level'] = df['price_level'].astype(int)
-        df['review_count'] = df['user_ratings_total'].astype(int)
-        df['latitude'] = df['latitude'].astype(float)
-        df['longitude'] = df['longitude'].astype(float)
+        # Extract location information safely
+        if 'formatted_address' in df.columns:
+            df['city'] = df['formatted_address'].str.extract(r'([^,]+),\s*([^,]+),\s*([A-Z]{2})')[0]
+            df['state'] = df['formatted_address'].str.extract(r'([^,]+),\s*([^,]+),\s*([A-Z]{2})')[2]
+        else:
+            df['city'] = 'Unknown'
+            df['state'] = 'Unknown'
+        
+        # Convert data types safely using column-based approach
+        # Handle price_level
+        if 'price_level' in df.columns:
+            df['price_level'] = pd.to_numeric(df['price_level'], errors='coerce').fillna(0).astype(int)
+        else:
+            df['price_level'] = 0
+            
+        # Handle review_count from user_ratings_total
+        if 'user_ratings_total' in df.columns:
+            df['review_count'] = pd.to_numeric(df['user_ratings_total'], errors='coerce').fillna(0).astype(int)
+        else:
+            df['review_count'] = 0
+            
+        # Handle latitude
+        if 'latitude' in df.columns:
+            df['latitude'] = pd.to_numeric(df['latitude'], errors='coerce').fillna(0.0).astype(float)
+        else:
+            df['latitude'] = 0.0
+            
+        # Handle longitude
+        if 'longitude' in df.columns:
+            df['longitude'] = pd.to_numeric(df['longitude'], errors='coerce').fillna(0.0).astype(float)
+        else:
+            df['longitude'] = 0.0
         
         # Add derived fields
         df['processed_at'] = pd.Timestamp.now()
@@ -213,7 +247,22 @@ class SparkRestaurantProcessor:
             if not dataframes:
                 return pd.DataFrame()
             
-            combined_df = pd.concat(dataframes, ignore_index=True)
+            # Filter out empty DataFrames
+            non_empty_dfs = [df for df in dataframes if not df.empty]
+            
+            if not non_empty_dfs:
+                return pd.DataFrame()
+            
+            # Ensure we always get a DataFrame, not a Series
+            if len(non_empty_dfs) == 1:
+                combined_df = non_empty_dfs[0].copy()
+            else:
+                combined_df = pd.concat(non_empty_dfs, ignore_index=True, sort=False)
+            
+            # Ensure it's a DataFrame
+            if isinstance(combined_df, pd.Series):
+                combined_df = combined_df.to_frame()
+            
             logger.info(f"Combined {len(combined_df)} records using pandas")
             return combined_df
             

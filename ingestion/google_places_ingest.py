@@ -12,12 +12,13 @@ class GooglePlacesIngestion:
     def __init__(self):
         self.api_key = get_api_key('google')
         self.base_url = "https://maps.googleapis.com/maps/api/place"
+        self.new_base_url = "https://places.googleapis.com/v1"
         self.headers = {
             'Content-Type': 'application/json'
         }
     
     def search_nearby_places(self, location: str, radius: int = 5000, type: str = "restaurant") -> List[Dict[str, Any]]:
-        """Search for nearby places using Google Places API."""
+        """Search for nearby places using Google Places API (New)."""
         if not self.api_key:
             logger.error("Google Places API key not available")
             return []
@@ -27,6 +28,78 @@ class GooglePlacesIngestion:
         if not coords:
             return []
         
+        # Try new Places API (New) first
+        new_results = self._search_nearby_new_api(coords, radius, type)
+        if new_results:
+            return new_results
+        
+        # Fallback to legacy API if new API fails
+        logger.warning("New Places API failed, trying legacy API")
+        return self._search_nearby_legacy_api(coords, radius, type)
+    
+    def _search_nearby_new_api(self, coords: Dict[str, float], radius: int, type: str) -> List[Dict[str, Any]]:
+        """Search using the new Places API (v1)."""
+        endpoint = f"{self.new_base_url}/places:searchNearby"
+        
+        headers = {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': self.api_key,
+            'X-Goog-FieldMask': 'places.id,places.displayName,places.rating,places.location,places.types,places.priceLevel,places.userRatingCount,places.formattedAddress'
+        }
+        
+        body = {
+            "locationRestriction": {
+                "circle": {
+                    "center": {
+                        "latitude": coords['lat'],
+                        "longitude": coords['lng']
+                    },
+                    "radius": float(radius)
+                }
+            },
+            "includedTypes": [type],
+            "maxResultCount": 20
+        }
+        
+        try:
+            response = requests.post(endpoint, json=body, headers=headers)
+            
+            if response.status_code != 200:
+                logger.error(f"New Places API HTTP error: {response.status_code} - {response.text}")
+                return []
+            
+            data = response.json()
+            places = data.get('places', [])
+            
+            # Convert new API format to legacy format for compatibility
+            converted_places = []
+            for place in places:
+                converted_place = {
+                    'place_id': place.get('id', ''),
+                    'name': place.get('displayName', {}).get('text', 'Unknown'),
+                    'rating': place.get('rating', 0),
+                    'user_ratings_total': place.get('userRatingCount', 0),
+                    'price_level': place.get('priceLevel', 0),
+                    'types': place.get('types', []),
+                    'formatted_address': place.get('formattedAddress', ''),
+                    'geometry': {
+                        'location': {
+                            'lat': place.get('location', {}).get('latitude', 0),
+                            'lng': place.get('location', {}).get('longitude', 0)
+                        }
+                    }
+                }
+                converted_places.append(converted_place)
+            
+            logger.info(f"Retrieved {len(converted_places)} places from new Places API")
+            return converted_places
+            
+        except Exception as e:
+            logger.error(f"Error with new Places API: {e}")
+            return []
+    
+    def _search_nearby_legacy_api(self, coords: Dict[str, float], radius: int, type: str) -> List[Dict[str, Any]]:
+        """Search using the legacy Places API."""
         endpoint = f"{self.base_url}/nearbysearch/json"
         params = {
             'location': f"{coords['lat']},{coords['lng']}",
@@ -44,16 +117,16 @@ class GooglePlacesIngestion:
             data = response.json()
             
             if data.get('status') != 'OK':
-                logger.error(f"Google Places API error: {data.get('status')}")
+                logger.error(f"Legacy Places API error: {data.get('status')}")
                 return []
             
             places = data.get('results', [])
-            logger.info(f"Retrieved {len(places)} places from Google Places")
+            logger.info(f"Retrieved {len(places)} places from legacy Places API")
             
             return places
             
         except Exception as e:
-            logger.error(f"Error fetching Google Places data: {e}")
+            logger.error(f"Error fetching legacy Places data: {e}")
             return []
     
     def get_place_details(self, place_id: str) -> Dict[str, Any]:
