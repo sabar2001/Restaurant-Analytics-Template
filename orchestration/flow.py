@@ -74,6 +74,37 @@ def ingest_google_places_data(location: str = "San Francisco, CA", radius: int =
         return pd.DataFrame()
 
 @task
+def collect_restaurant_reviews(restaurant_df: pd.DataFrame, reviews_per_bucket: int = 10) -> pd.DataFrame:
+    """Collect detailed reviews for restaurants."""
+    try:
+        from ingestion.utils import get_api_key
+        
+        if not get_api_key('google'):
+            logger.warning("Google Places API key not configured - skipping reviews collection")
+            return pd.DataFrame()
+        
+        if restaurant_df.empty or 'place_id' not in restaurant_df.columns:
+            logger.warning("No restaurant data or place_id column available for reviews collection")
+            return pd.DataFrame()
+        
+        logger.info(f"🔍 Starting reviews collection for {len(restaurant_df)} restaurants")
+        logger.info(f"Target: {reviews_per_bucket} reviews per rating bucket")
+        
+        google = GooglePlacesIngestion()
+        reviews_df = google.collect_reviews_for_restaurants(restaurant_df, reviews_per_bucket)
+        
+        if not reviews_df.empty:
+            logger.info(f"✅ Successfully collected reviews for {len(reviews_df)} restaurants")
+            return reviews_df
+        else:
+            logger.warning("No reviews data collected")
+            return pd.DataFrame()
+            
+    except Exception as e:
+        logger.error(f"Error in reviews collection: {e}")
+        return pd.DataFrame()
+
+@task
 def combine_data_sources_with_spark(yelp_dataframes: List[pd.DataFrame], google_dataframes: List[pd.DataFrame], config: Dict[str, Any] = None) -> Any:
     """Combine data from multiple sources using Spark or pandas."""
     try:
@@ -308,16 +339,46 @@ def restaurant_data_pipeline(
         load_success = load_to_bigquery_with_spark(combined_data, "raw_restaurant_data", config)
         
         if load_success:
-            logger.info("Pipeline completed successfully")
+            logger.info("✅ Restaurant data loaded successfully")
+            
+            # Phase 2: Collect reviews for the restaurants we just ingested
+            reviews_df = pd.DataFrame()
+            try:
+                logger.info("🔍 Starting Phase 2: Reviews collection...")
+                
+                # Use the validation_df (pandas) for reviews collection
+                if not validation_df.empty and 'place_id' in validation_df.columns:
+                    # Limit to top restaurants for reviews collection (API efficiency)
+                    top_restaurants = validation_df.head(50)  # Collect reviews for top 50 restaurants
+                    reviews_df = collect_restaurant_reviews(top_restaurants, reviews_per_bucket=10)
+                    
+                    if not reviews_df.empty:
+                        # Load reviews to BigQuery
+                        reviews_load_success = load_to_bigquery_with_spark(reviews_df, "raw_restaurant_reviews", config)
+                        if reviews_load_success:
+                            logger.info(f"✅ Reviews data loaded successfully: {len(reviews_df)} restaurants")
+                        else:
+                            logger.warning("Reviews collection succeeded but BigQuery loading failed")
+                    else:
+                        logger.warning("No reviews data collected")
+                else:
+                    logger.warning("Cannot collect reviews: missing place_id column or no restaurant data")
+                    
+            except Exception as e:
+                logger.error(f"Error in reviews collection phase: {e}")
+            
+            logger.info("🎉 Complete pipeline finished successfully")
             return {
                 "status": "success",
                 "records_processed": len(validation_df) if not validation_df.empty else 0,
+                "reviews_restaurants_processed": len(reviews_df) if not reviews_df.empty else 0,
                 "locations_processed": len(locations),
                 "location_results": location_results,
                 "quality_metrics": quality_metrics,
                 "processing_engine": "Spark" if config.get('use_spark', False) else "Pandas",
                 "apis_used": [api for api, available in available_apis.items() if available],
-                "total_api_sources": sum(available_apis.values())
+                "total_api_sources": sum(available_apis.values()),
+                "reviews_collection": "success" if not reviews_df.empty else "no_data"
             }
         else:
             logger.error("Pipeline failed at BigQuery loading step")

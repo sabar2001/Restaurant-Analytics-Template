@@ -6,3 +6,5 @@ sources:
     tables:
       - name: raw_restaurant_data
         description: "Raw restaurant data from Yelp and Google Places APIs"
+      - name: raw_restaurant_reviews
+        description: "Raw restaurant reviews data organized by rating buckets"

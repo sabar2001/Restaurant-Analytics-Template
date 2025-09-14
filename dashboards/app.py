@@ -199,7 +199,7 @@ def load_real_data():
             formatted_address,
             latitude,
             longitude,
-            data_source,wan
+            data_source,
             data_quality_score,
             weighted_rating_score,
             categories,
@@ -237,7 +237,7 @@ def load_sample_data():
     
     data = {
         'restaurant_id': [f'DEMO_{i:03d}' for i in range(1, n_restaurants + 1)],
-        'restaurant_name': [f'Demo Restaurant {i}' for i in range(1, n_restaurants + 1)],
+        'name': [f'Demo Restaurant {i}' for i in range(1, n_restaurants + 1)],  # Changed from restaurant_name to name
         'rating': np.random.normal(3.8, 0.8, n_restaurants).clip(1, 5),
         'rating_category': np.random.choice(['Excellent', 'Very Good', 'Good', 'Average', 'Below Average'], n_restaurants, p=[0.1, 0.2, 0.4, 0.2, 0.1]),
         'data_source': np.random.choice(['demo_data'], n_restaurants),  # Clear it's demo data
